@@ -110,6 +110,21 @@ textarea{width:100%;min-height:140px;font-family:ui-monospace,Consolas,Menlo,mon
 .gecmis button{min-height:0;padding:4px 6px;border:0;background:none;color:var(--accent)}
 #liveBtn{width:100%;flex:none}
 #kurulumYok .big{flex:none}
+/* Miad ve adet paneli (karekodsuz ürünler): alttan açılır */
+.perde{position:fixed;inset:0;background:rgba(31,26,27,.38);z-index:15}
+.sheet{position:fixed;left:0;right:0;bottom:0;z-index:16;margin:0 auto;max-width:760px;background:var(--surface);
+  border-radius:16px 16px 0 0;box-shadow:0 -8px 30px rgba(0,0,0,.25);padding:16px max(16px,env(safe-area-inset-left)) calc(16px + env(safe-area-inset-bottom,0px));
+  display:flex;flex-direction:column;gap:12px}
+.sheet-bas{display:flex;flex-direction:column;gap:4px}
+.sheet-bas b{font-size:1.05rem;overflow-wrap:anywhere}
+.ma-satir{display:flex;align-items:center;gap:10px}
+.ma-et{flex:0 0 52px;font-size:13px;font-weight:750;letter-spacing:.07em;color:var(--accent)}
+#maMiad,#maAdet{font-size:1.35rem;text-align:center;min-height:54px;font-variant-numeric:tabular-nums}
+#maMiad{flex:1;min-width:0;letter-spacing:.06em}
+.adet{display:flex;align-items:center;gap:8px;flex:1;min-width:0}
+.adet button{width:54px;min-height:54px;font-size:1.5rem;padding:0;flex:none}
+#maAdet{flex:1;min-width:0}
+.sheet ~ .toast{bottom:calc(16px + env(safe-area-inset-bottom,0px))}
 .bagbox{display:flex;flex-direction:column;gap:10px;align-items:stretch}
 #bagKod{align-self:center;background:#fff;padding:10px;border-radius:10px;border:1px solid var(--line);line-height:0}
 #bagKod svg{width:min(280px,70vw);height:auto;display:block}
@@ -256,6 +271,14 @@ textarea{width:100%;min-height:140px;font-family:ui-monospace,Consolas,Menlo,mon
     <div class="gecmis" id="gecmis"></div>
   </section>
 </div>
+<div class="perde" id="maPerde" hidden></div>
+<section class="sheet" id="maSheet" hidden role="dialog" aria-label="Miad ve adet">
+  <div class="sheet-bas"><b id="maAd">Ürün</b><span class="row" style="gap:6px"><span class="mono" id="maKod"></span><span class="chip ok" id="maEtiket" hidden>Etiketten</span><span class="chip" id="maSira" hidden></span></span></div>
+  <div class="ma-satir"><span class="ma-et">MİAD</span><input id="maMiad" type="text" inputmode="numeric" placeholder="AA/YY" autocomplete="off" aria-label="Miad (ay/yıl)"></div>
+  <div class="ma-satir"><span class="ma-et">ADET</span><div class="adet"><button type="button" id="maEksi" aria-label="Bir azalt">−</button><input id="maAdet" type="text" inputmode="numeric" value="1" autocomplete="off" aria-label="Adet"><button type="button" id="maArti" aria-label="Bir artır">+</button></div></div>
+  <p class="confirm" id="maHata" hidden></p>
+  <div class="row"><button type="button" id="maVazgec" style="flex:1 1 100px">Vazgeç</button><button type="button" id="maKaydet" class="primary big" style="flex:2 1 160px">Kaydet</button></div>
+</section>
 <div class="toast" id="toast" hidden></div>
 
 <script src="vendor/zxing-library.min.js"></script>
@@ -371,16 +394,18 @@ async function okumaGonder(liste){
   const sayim_id=durum.sayim?durum.sayim.id:null;
   if(kuyruk.length)await kuyrukGonder();
   if(!kuyruk.length){
-    try{const v=await apiPost('okuma',{sayim_id,okumalar:kayitlar});
-      v.sonuclar.forEach(s=>{if(s.sonuc==='eklendi')geriAl.push({istemci_id:s.istemci_id,sayim_id:v.sayim_id})});
+    // Google bir istekte en çok 500 okuma alır (çok adetli karekodsuz giriş): parça parça.
+    try{const sonuclar=[];let v=null;
+      for(let i=0;i<kayitlar.length;i+=400){v=await apiPost('okuma',{sayim_id,okumalar:kayitlar.slice(i,i+400)});
+        v.sonuclar.forEach(s=>{if(s.sonuc==='eklendi')geriAl.push({istemci_id:s.istemci_id,sayim_id:v.sayim_id})});sonuclar.push(...v.sonuclar)}
       if(geriAl.length>300)geriAl.splice(0,geriAl.length-300);
       if(v.rev!==durum.rev)durumCek();
-      render();return v.sonuclar}
+      render();return sonuclar}
     catch(e){if(!e.ag){toast('Kaydedilemedi: '+e.message);return kayitlar.map(k=>({sonuc:'hata',gtin:k.gtin}))}}
   }
   const sonuc=kayitlar.map(k=>{
     if(k.seri&&kuyruk.some(q=>q.gtin===k.gtin&&q.seri===k.seri))return {sonuc:'tekrar',gtin:k.gtin};
-    kuyruk.push({...k,sayim_id});geriAl.push({istemci_id:k.istemci_id,sayim_id});return {sonuc:'kuyruk',gtin:k.gtin}});
+    kuyruk.push({...k,sayim_id});geriAl.push({istemci_id:k.istemci_id,sayim_id});return {sonuc:'kuyruk',gtin:k.gtin,istemci_id:k.istemci_id}});
   kuyrukKaydet();render();return sonuc;
 }
 function indirDosya(ad,metin,tur){
@@ -458,6 +483,10 @@ function parseCode(raw){
   s=s.replace(/<GS>|\{GS\}|␝/gi,GS);
   if(s.startsWith(GS))s=s.slice(1);
   const plain=s.replace(/\s/g,'');
+  // Eczane QR etiketi (karekodsuz ürün): "~112M8683229900300~20280530" → barkod, miad 30.05.2028
+  const etiket=plain.match(/^~[^~]*?(\d{8}|\d{12,14})~(\d{2})(\d{2})(\d{2})(\d{2})$/);
+  if(etiket){const [,b,,yy,aa,gg]=etiket,expRaw=yy+aa+gg,exp=parseYYMMDD(expRaw);
+    return {gtin:b.padStart(14,'0'),raw:s,etiket:true,exp,expRaw:exp?expRaw:undefined}}
   if(/^\d{8}$|^\d{12,14}$/.test(plain)){return {gtin:plain.padStart(14,'0'),raw:s}}
   if(!/^01\d{14}/.test(plain.replace(/\x1d/g,'')))return null;
   s=plain;const out={raw:s};let i=0;
@@ -575,23 +604,101 @@ function sonucMetni(r,gtin){
   return ad+' · kaydedilemedi';
 }
 
+/* ---------- karekodsuz ürünler: miad ve adet ----------
+   EAN-13 barkodlu ve eczane QR etiketli ürünlerde seri no. yoktur, kutular tek tek
+   ayırt edilemez: okutunca miad ve adet sorulur, girilen adet kadar kutu (her biri bir
+   satır) aynı miadla yazılır. QR etiketinde miad etiketten gelir; barkodlu üründe o ürün
+   için son girilen miad önerilir. Karekodlu kutuların üstündeki EAN-13 sayılmaz: o
+   ürünün karekodu görüldüyse (aynı karede, son 5 sn'de ya da bu sayımda) barkod atlanır. */
+const sorKuyrugu=[];let sorulan=null,duraklat=false;
+const dmGoruldu=new Map();   // gtin -> karekodunun en son görüldüğü an
+function karekodluMu(g){const u=urunMap.get(g);return (dmGoruldu.get(g)||0)>Date.now()-5000||!!(u&&u.seri>0)}
+const miadYaz=s=>s?s.slice(2,4)+'/'+s.slice(0,2):'';
+function miadOku(v){   // "05/28", "0528", "05/2028" -> {skt:'YYAA00'}; boş -> {skt:null}; geçersiz -> undefined
+  const d=String(v||'').replace(/\D/g,'');if(!d)return {skt:null};
+  let ay,yil;
+  if(d.length===4){ay=+d.slice(0,2);yil=2000+ +d.slice(2)}else if(d.length===6){ay=+d.slice(0,2);yil=+d.slice(2)}else return;
+  if(ay<1||ay>12||yil<2000||yil>2099)return;
+  return {skt:String(yil%100).padStart(2,'0')+String(ay).padStart(2,'0')+'00'};   // gün 00 = ayın sonu (GS1)
+}
+function miadAdetSor(p,kaynak){
+  if((sorulan&&sorulan.p.raw===p.raw)||sorKuyrugu.some(x=>x.p.raw===p.raw))return;
+  sorKuyrugu.push({p,kaynak});if(!sorulan)siradakiniSor();else maSiraCiz();
+}
+function maSiraCiz(){const n=sorKuyrugu.length;$('maSira').hidden=!n;$('maSira').textContent=`+${n} sırada`}
+function siradakiniSor(){
+  const onceki=sorulan;sorulan=sorKuyrugu.shift()||null;
+  if(!sorulan){
+    $('maSheet').hidden=$('maPerde').hidden=true;duraklat=false;
+    // Panel açıkken kamera durdu: hâlâ görünen kodlar "yeni" sayılıp yeniden sorulmasın.
+    const t=Date.now();seen.forEach((v,k)=>seen.set(k,t));
+    if(onceki&&onceki.kaynak==='okuyucu')$('scanIn').focus();
+    return;
+  }
+  duraklat=true;const {p,kaynak}=sorulan;
+  $('maAd').textContent=nameOf(p.gtin)||'İsimsiz ürün';$('maKod').textContent=ean(p.gtin);$('maEtiket').hidden=!p.etiket;
+  $('maMiad').value=miadYaz(p.expRaw||lsGet('miad-'+p.gtin)||'');$('maAdet').value='1';
+  maHata('');maSiraCiz();$('maSheet').hidden=$('maPerde').hidden=false;
+  // Klavye yalnız gerektiğinde açılsın (kamera görüntüsünü kapatmasın): miad boşsa ya da el okuyucuyla.
+  if(!$('maMiad').value)$('maMiad').focus();
+  else if(kaynak==='okuyucu'){$('maAdet').focus();$('maAdet').select()}
+}
+function maHata(m){$('maHata').textContent=m;$('maHata').hidden=!m}
+async function maKaydet(){
+  if(!sorulan)return;
+  const m=miadOku($('maMiad').value),adet=Math.floor(Number($('maAdet').value));
+  if(!m){maHata('Miad ay/yıl olmalı: 05/28');$('maMiad').focus();return}
+  if(!(adet>=1&&adet<=500)){maHata('Adet 1 ile 500 arası olmalı');$('maAdet').focus();return}
+  const {p:p0,kaynak}=sorulan;
+  // Etiketteki tam gün değiştirilmediyse korunur (05/28 -> 280530)
+  const skt=p0.expRaw&&$('maMiad').value===miadYaz(p0.expRaw)?p0.expRaw:m.skt;
+  if(skt)lsSet('miad-'+p0.gtin,skt);
+  const p={...p0,serial:null,lot:null,expRaw:skt||undefined};
+  siradakiniSor();
+  const sonuc=await okumaEkle(Array.from({length:adet},()=>({p,kaynak})));
+  const n=sonuc.filter(r=>r.sonuc==='eklendi'||r.sonuc==='kuyruk').length;
+  // Geri al bu girişin bütün kutularını birden geri alsın
+  const idler=new Set(sonuc.map(r=>r.istemci_id).filter(Boolean)),grup=geriAl.filter(g=>idler.has(g.istemci_id));
+  if(grup.length>1){geriAl=geriAl.filter(g=>!idler.has(g.istemci_id));geriAl.push({grup})}
+  const iso=skt&&parseYYMMDD(skt);
+  beep(n>0);toast(n?`${sonuc[0].ad||nameOf(p.gtin)||ean(p.gtin)} +${n}${iso?' · SKT '+fmtExp(iso):''}${sonuc.some(r=>r.sonuc==='kuyruk')?' · bağlantı yok, bekliyor':''}`:'Kaydedilemedi');
+  if(kaynak==='kamera'){liveAdded+=n;$('liveAdded').textContent=liveAdded+' eklendi'}
+  render();
+}
+$('maKaydet').onclick=maKaydet;
+$('maVazgec').onclick=()=>siradakiniSor();
+$('maPerde').onclick=()=>siradakiniSor();
+$('maMiad').addEventListener('input',e=>{const d=e.target.value.replace(/\D/g,'').slice(0,6);e.target.value=d.length>2?d.slice(0,2)+'/'+d.slice(2):d;maHata('')});
+$('maMiad').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();$('maAdet').focus();$('maAdet').select()}});
+$('maAdet').addEventListener('input',e=>{e.target.value=e.target.value.replace(/\D/g,'').slice(0,3);maHata('')});
+$('maAdet').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();maKaydet()}});
+$('maEksi').onclick=()=>{$('maAdet').value=Math.max(1,(Number($('maAdet').value)||1)-1)};
+$('maArti').onclick=()=>{$('maAdet').value=Math.min(500,(Number($('maAdet').value)||0)+1)};
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&sorulan)siradakiniSor()});
+
 /* ---------- manual / scanner input ---------- */
 $('scanForm').addEventListener('submit',async e=>{
   e.preventDefault();const v=$('scanIn').value;$('scanIn').value='';
   if(!v.trim())return;
   const p=parseCode(v);
   if(!p){beep(false);toast('Kod tanınmadı');return}
+  if(!p.serial){miadAdetSor(p,'okuyucu');return}
   $('scanIn').focus();
   const [r]=await okumaEkle([{p,kaynak:'okuyucu'}]);
   beep(r.sonuc==='eklendi'||r.sonuc==='kuyruk');toast(sonucMetni(r,p.gtin));
 });
 $('undoBtn').onclick=async()=>{
   const u=geriAl.pop();if(!u)return;
-  const i=kuyruk.findIndex(k=>k.istemci_id===u.istemci_id);
-  if(i>=0){kuyruk.splice(i,1);kuyrukKaydet();toast('Son okuma geri alındı');render();return}
-  try{await apiPost('sil',{istemci_id:u.istemci_id,sayim_id:u.sayim_id});toast('Son okuma geri alındı');durumCek()}
-  catch(e){geriAl.push(u);toast(e.ag?'Bağlantı yok; geri alınamadı':e.message)}
-  render();
+  const parcalar=u.grup||[u];let n=0;const kalan=[];
+  await Promise.all(parcalar.map(async x=>{
+    const i=kuyruk.findIndex(k=>k.istemci_id===x.istemci_id);
+    if(i>=0){kuyruk.splice(i,1);n++;return}
+    try{await apiPost('sil',{istemci_id:x.istemci_id,sayim_id:x.sayim_id});n++}catch(e){kalan.push(x)}
+  }));
+  kuyrukKaydet();
+  if(kalan.length){geriAl.push(kalan.length>1?{grup:kalan}:kalan[0]);toast('Bağlantı yok; '+kalan.length+' kutu geri alınamadı')}
+  else toast(n>1?`Son giriş geri alındı (${n} kutu)`:'Son okuma geri alındı');
+  durumCek();render();
 };
 
 /* ---------- photo decoding ---------- */
@@ -732,14 +839,21 @@ async function handlePhoto(file){
   await tick();
   const found=await kodlariBul(work);setProg(null);
   const okunan=found.map(f=>({f,p:parseCode(f.text)}));
-  const gecerli=okunan.filter(x=>x.p);
+  const gecerli=okunan.filter(x=>x.p&&x.p.serial);
+  // Karekodsuz (barkod / QR etiket): ürün başına bir kez miad ve adet sorulur; karekodu
+  // aynı fotoğrafta ya da daha önce görülmüş ürünün barkodu sayılmaz.
+  const dmGtin=new Set(gecerli.map(x=>x.p.gtin)),sorulacak=new Map();
+  for(const x of okunan)if(x.p&&!x.p.serial){
+    if(dmGtin.has(x.p.gtin)||karekodluMu(x.p.gtin))x.gec=true;
+    else{x.sor=true;if(!sorulacak.has(x.p.gtin))sorulacak.set(x.p.gtin,x.p)}}
   const sonuclar=gecerli.length?await okumaEkle(gecerli.map(x=>({p:x.p,kaynak:'foto'}))):[];
   gecerli.forEach((x,i)=>x.r=sonuclar[i]);
   let added=0,dup=0,bad=0,bekleyen=0;const css=getComputedStyle(document.documentElement);
-  const col={added:css.getPropertyValue('--ok').trim()||'#1d7a4f',dup:css.getPropertyValue('--warn').trim()||'#9a5b00',bad:css.getPropertyValue('--bad').trim()||'#b4232c'};
+  const col={added:css.getPropertyValue('--ok').trim()||'#1d7a4f',dup:css.getPropertyValue('--warn').trim()||'#9a5b00',bad:css.getPropertyValue('--bad').trim()||'#b4232c',sor:css.getPropertyValue('--accent').trim()||'#A5121B',gec:'#8C8384'};
   for(const x of okunan){
     let r='bad';
-    if(x.r){const s=x.r.sonuc;if(s==='eklendi'||s==='kuyruk'){r='added';added++;if(s==='kuyruk')bekleyen++}else if(s==='tekrar'){r='dup';dup++}else bad++}else bad++;
+    if(x.sor)r='sor';else if(x.gec)r='gec';
+    else if(x.r){const s=x.r.sonuc;if(s==='eklendi'||s==='kuyruk'){r='added';added++;if(s==='kuyruk')bekleyen++}else if(s==='tekrar'){r='dup';dup++}else bad++}else bad++;
     const f=x.f,cx=f.x*vs,cy=f.y*vs,rad=Math.max(10,f.r*vs*1.15);
     sctx.lineWidth=Math.max(3,shot.width/260);sctx.strokeStyle=col[r];sctx.beginPath();sctx.arc(cx,cy,rad,0,Math.PI*2);sctx.stroke();
     sctx.fillStyle=col[r];sctx.beginPath();sctx.arc(cx,cy,Math.max(4,rad/5),0,Math.PI*2);sctx.fill();
@@ -748,7 +862,9 @@ async function handlePhoto(file){
   const mk=(t,c)=>{const s=document.createElement('span');s.className='chip '+c;s.textContent=t;chips.append(s)};
   mk(found.length+' kod bulundu','');if(added)mk(added+' eklendi','ok');if(bekleyen)mk(bekleyen+' bağlantı bekliyor','warn');
   if(dup)mk(dup+' zaten sayılmış','warn');if(bad)mk(bad+' tanınmayan','bad');
-  if(!found.length){mk('Kod bulunamadı; daha yakından ve net çekin','bad');beep(false)}else beep(added>0);
+  if(sorulacak.size)mk(sorulacak.size+' ürün: miad ve adet','');
+  if(!found.length){mk('Kod bulunamadı; daha yakından ve net çekin','bad');beep(false)}else if(added)beep(true);
+  sorulacak.forEach(p=>miadAdetSor(p,'foto'));
 }
 $('photoIn').addEventListener('change',async e=>{const f=e.target.files[0];e.target.value='';await handlePhoto(f)});
 $('galleryIn').addEventListener('change',async e=>{const fs=[...e.target.files];e.target.value='';for(const f of fs)await handlePhoto(f)});
@@ -835,15 +951,27 @@ function drawMarks(v){
   // Nişan çerçevesi: siyah zeminli/nokta baskılı karekodlar bu alanın içinde daha hızlı okunur (ORTA).
   {const w=ov.width*ORTA,h=ov.height*ORTA;ctx.save();ctx.strokeStyle='rgba(255,255,255,.55)';ctx.lineWidth=Math.max(2,ov.width/400);
     ctx.setLineDash([ov.width/40,ov.width/60]);ctx.strokeRect((ov.width-w)/2,(ov.height-h)/2,w,h);ctx.restore()}
-  const css=getComputedStyle(document.documentElement);const col={added:css.getPropertyValue('--ok').trim(),dup:css.getPropertyValue('--warn').trim(),bad:css.getPropertyValue('--bad').trim()};
+  const css=getComputedStyle(document.documentElement);const col={added:css.getPropertyValue('--ok').trim(),dup:css.getPropertyValue('--warn').trim(),bad:css.getPropertyValue('--bad').trim(),sor:css.getPropertyValue('--accent').trim(),gec:'#8C8384'};
   for(const m of marks){ctx.lineWidth=Math.max(4,ov.width/180);ctx.strokeStyle=col[m.s]||'#fff';ctx.beginPath();ctx.arc(m.x,m.y,Math.max(24,m.r*1.2),0,Math.PI*2);ctx.stroke()}
 }
+/* Karekodsuz bir kodu (barkod / QR etiket) panelle sormadan önce kısa süre beklenir: aynı
+   kutunun karekodu bu arada okunursa barkod sayılmaz (karekodlu kutularda ikisi birden var). */
+const BARKOD_BEKLE=900,ilkGorus=new Map();
 function handleFound(found){
   const now=Date.now();
-  for(const f of found){
+  const okunan=found.map(f=>({f,p:parseCode(f.text)}));
+  okunan.forEach(x=>{if(x.p&&x.p.serial)dmGoruldu.set(x.p.gtin,now)});
+  for(const {f,p} of okunan){
     const prev=seen.get(f.text);seen.set(f.text,now);
-    if(!prev||now-prev>2000){ // new sighting (or came back into view after 2 s)
-      const p=parseCode(f.text);
+    const yeni=!prev||now-prev>2000;   // new sighting (or came back into view after 2 s)
+    if(p&&!p.serial){
+      if(yeni){ilkGorus.set(f.text,now);statusOf.set(f.text,'bekliyor')}
+      if(karekodluMu(p.gtin))statusOf.set(f.text,'gec');
+      else if(statusOf.get(f.text)==='bekliyor'&&now-(ilkGorus.get(f.text)||now)>=BARKOD_BEKLE){
+        statusOf.set(f.text,'sor');miadAdetSor(p,'kamera');
+        $('liveLast').textContent=(nameOf(p.gtin)||ean(p.gtin))+' · miad ve adet'}
+    }
+    else if(yeni){
       if(!p){statusOf.set(f.text,'bad');beep(false);$('liveLast').textContent='Tanınmayan kod'}
       else{statusOf.set(f.text,'bekliyor');   // sunucunun yanıtına kadar beyaz halka
         okumaEkle([{p,kaynak:'kamera'}]).then(([r])=>{
@@ -858,7 +986,8 @@ function handleFound(found){
 }
 async function loop(){
   if(!running)return;const v=$('vid');
-  if(v.readyState>=2){const found=await detectFrame(v);if(!running)return;handleFound(found);drawMarks(v)}
+  // Miad/adet paneli açıkken okuma durur (kamera açık kalır)
+  if(v.readyState>=2){if(duraklat)drawMarks(v);else{const found=await detectFrame(v);if(!running)return;if(!duraklat)handleFound(found);drawMarks(v)}}
   setTimeout(()=>requestAnimationFrame(loop),useWasm?10:det?100:30);
 }
 $('liveBtn').onclick=()=>{try{actx=actx||new (window.AudioContext||window.webkitAudioContext)()}catch(e){}startLive()};
