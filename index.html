@@ -109,6 +109,10 @@ textarea{width:100%;min-height:140px;font-family:ui-monospace,Consolas,Menlo,mon
 .gecmis b{color:var(--fg)}
 .gecmis button{min-height:0;padding:4px 6px;border:0;background:none;color:var(--accent)}
 #liveBtn{width:100%;flex:none}
+#kurulumYok .big{flex:none}
+.bagbox{display:flex;flex-direction:column;gap:10px;align-items:stretch}
+#bagKod{align-self:center;background:#fff;padding:10px;border-radius:10px;border:1px solid var(--line);line-height:0}
+#bagKod svg{width:min(280px,70vw);height:auto;display:block}
 .live{display:flex;flex-direction:column;gap:8px}
 .viewer{position:relative;border-radius:12px;overflow:hidden;background:#000;aspect-ratio:3/4;max-height:70vh;max-width:100%}
 .viewer video,.viewer canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
@@ -142,8 +146,16 @@ textarea{width:100%;min-height:140px;font-family:ui-monospace,Consolas,Menlo,mon
   </header>
 
   <section class="panel" id="kurulumYok" hidden aria-label="Kurulum">
-    <div class="label">KURULUM GEREKLİ</div>
-    <p class="hint">Bu sayfayı eczanenin verdiği kurulum bağlantısıyla bir kez açın; telefon sonra hatırlar.</p>
+    <div class="label">KURULUM GEREKLİ<span class="ipucu" tabindex="0" data-ipucu="Kurulu bir cihazda (ör. eczanedeki bilgisayar) Stok Sayım'da 'Telefon bağla'ya basın ve çıkan karekodun fotoğrafını bu telefonla çekin. Ya da eczanenin gönderdiği kurulum bağlantısını aşağıya yapıştırın. Telefon bir kez kurulunca hatırlar."></span></div>
+    <label class="btn primary big" for="kurFoto">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>
+      Kurulum karekodunu okut
+      <input id="kurFoto" type="file" accept="image/*" capture="environment">
+    </label>
+    <form class="row" id="kurForm" autocomplete="off">
+      <input id="kurIn" type="text" placeholder="Kurulum bağlantısını yapıştırın" aria-label="Kurulum bağlantısı" style="flex:1 1 200px">
+      <button type="submit">Kaydet</button>
+    </form>
   </section>
 
   <section class="panel" id="kimlik" hidden aria-label="Sayan kişi">
@@ -220,7 +232,13 @@ textarea{width:100%;min-height:140px;font-family:ui-monospace,Consolas,Menlo,mon
       <button type="button" id="txtBtn" class="primary">Tria için karekod listesi (TXT)</button>
       <button type="button" id="exportBtn">Sayımı CSV indir</button>
       <button type="button" id="copyBtn">Panoya kopyala</button>
+      <button type="button" id="bagBtn">Telefon bağla</button>
       <button type="button" id="resetBtn" class="danger">Yeni sayım başlat</button>
+    </div>
+    <div class="bagbox" id="bagBox" hidden>
+      <div class="label">TELEFON BAĞLA<span class="ipucu sol" tabindex="0" data-ipucu="Yeni telefonda eczkocak.github.io/stok-sayim adresini açıp 'Kurulum karekodunu okut'a basın ve bu karekodun fotoğrafını çekin. Karekod ve bağlantı Google'a yazma anahtarını içerir; yalnız eczane personeliyle paylaşın."></span></div>
+      <div id="bagKod"></div>
+      <div class="row"><input id="bagIn" type="text" readonly aria-label="Kurulum bağlantısı" style="flex:1 1 200px"><button type="button" id="bagKopya">Kopyala</button><button type="button" id="bagKapat">Kapat</button></div>
     </div>
     <div class="confirm" id="resetConfirm" hidden>
       <span>Bu sayım kapatılsın ve yeni sayım başlasın mı? Kapanan sayım silinmez, aşağıdaki listede kalır. Bütün telefonlar yeni sayıma geçer.</span>
@@ -255,10 +273,24 @@ function uid(){try{return crypto.randomUUID()}catch(e){return Date.now().toStrin
    "değişti mi" diye sorar, değiştiyse listeyi yeniden çeker. */
 // u= tam adres ya da yalnız dağıtım kimliği olabilir (Google ikisini de gösterir).
 const tamAdres=u=>/^[\w-]{20,}$/.test(u)?`https://script.google.com/macros/s/${u}/exec`:u;
+/* Kurulum bağlantısından (ya da karekodundan, yapıştırılan metinden) adres ve
+   anahtarı çıkarır. Yalnız Google'ın web uygulaması adresi kabul edilir: başka bir
+   karekod telefonu yabancı bir sunucuya bağlayamasın. */
+function kurulumCoz(metin){
+  const s=String(metin||'').trim(),i=s.indexOf('#');
+  const h=new URLSearchParams(i>=0?s.slice(i+1):s);
+  const url=tamAdres(h.get('u')||''),k=h.get('k')||'';
+  return /^https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec$/.test(url)&&/^[\w-]{8,64}$/.test(k)?{url,k}:null;
+}
 const ayar={url:tamAdres(lsGet('url')||''),k:lsGet('k')||''};
-{const h=new URLSearchParams(location.hash.slice(1));
-  if(h.get('u')&&h.get('k')){ayar.url=tamAdres(h.get('u'));ayar.k=h.get('k');lsSet('url',ayar.url);lsSet('k',ayar.k)}
+{const a=kurulumCoz(location.hash);
+  if(a){ayar.url=a.url;ayar.k=a.k;lsSet('url',a.url);lsSet('k',a.k)}
   if(location.hash)history.replaceState(null,'',location.pathname+location.search)}
+/* Başka telefonu bağlamak için kurulum bağlantısı (karekodu küçük olsun diye adres yerine kimlik). */
+function kurulumBaglantisi(){
+  const m=ayar.url.match(/^https:\/\/script\.google\.com\/macros\/s\/([\w-]+)\/exec$/);
+  return `${location.origin}${location.pathname}#u=${m?m[1]:encodeURIComponent(ayar.url)}&k=${ayar.k}`;
+}
 let durum={rev:'',sayim:null,urunler:[],gecmis:[],urun_adi_sayisi:0};
 let urunMap=new Map();
 const ben={ad:lsGet('personel')||'',cihaz:lsGet('cihaz')||''};
@@ -373,12 +405,38 @@ document.querySelectorAll('.ipucu').forEach(ipucu);
 /* ---------- sayan kişi ---------- */
 function kimlikCiz(){
   const kurulu=!!ayar.url;
-  $('kurulumYok').hidden=kurulu;
+  $('kurulumYok').hidden=kurulu;$('bagBtn').hidden=!kurulu;
   $('kimlik').hidden=!kurulu||!!ben.ad;$('okumaPanel').hidden=!kurulu||!ben.ad;
   $('kimBtn').hidden=!ben.ad;$('kimBtn').textContent=ben.ad;
 }
 $('kimForm').addEventListener('submit',e=>{e.preventDefault();const v=$('adIn').value.trim().slice(0,40);if(!v){$('adIn').focus();return}
   ben.ad=v;lsSet('personel',v);kimlikCiz()});
+
+/* ---------- kurulum: karekod, yapıştırma, başka telefonu bağlama ---------- */
+function kurulumKaydet(a){
+  ayar.url=a.url;ayar.k=a.k;lsSet('url',a.url);lsSet('k',a.k);
+  durum.rev='';kimlikCiz();durumCek();kuyrukGonder();toast('Kurulum tamam');beep(true);
+}
+$('kurForm').addEventListener('submit',e=>{e.preventDefault();
+  const a=kurulumCoz($('kurIn').value);
+  if(!a){toast('Bu bir kurulum bağlantısı değil');beep(false);return}
+  $('kurIn').value='';kurulumKaydet(a)});
+$('kurFoto').addEventListener('change',async e=>{
+  const f=e.target.files[0];e.target.value='';if(!f)return;
+  toast('Karekod aranıyor…');
+  let kodlar=[];try{kodlar=await fotoKodlari(f)}catch(err){}
+  const a=kodlar.map(x=>kurulumCoz(x.text)).find(Boolean);
+  if(a)kurulumKaydet(a);
+  else{beep(false);toast(kodlar.length?'Bu karekod kurulum karekodu değil':'Karekod bulunamadı; ekrana daha yakından ve dik çekin')}
+});
+$('bagBtn').onclick=()=>{
+  const bag=kurulumBaglantisi(),kutu=$('bagKod');kutu.textContent='';
+  try{kutu.append(new ZXing.BrowserQRCodeSvgWriter().write(bag,300,300))}catch(e){kutu.textContent='Karekod çizilemedi; bağlantıyı kopyalayın.'}
+  $('bagIn').value=bag;$('bagBox').hidden=false;$('bagBox').scrollIntoView({behavior:'smooth',block:'nearest'});
+};
+$('bagKapat').onclick=()=>{$('bagBox').hidden=true;$('bagKod').textContent='';$('bagIn').value=''};
+$('bagKopya').onclick=()=>{const t=$('bagIn').value;
+  navigator.clipboard.writeText(t).then(()=>toast('Bağlantı kopyalandı'),()=>{$('bagIn').focus();$('bagIn').select();toast('Metin seçildi; kopyala deyin')})};
 $('kimBtn').onclick=()=>{$('adIn').value=ben.ad;ben.ad='';kimlikCiz();$('adIn').focus()};
 
 /* ---------- dates ---------- */
@@ -598,21 +656,29 @@ function dedupe(list){
   }
   return out;
 }
-async function handlePhoto(file){
-  if(!file)return;
-  setProg(0.02);$('preview').hidden=false;$('shotChips').textContent='';
-  let im,url;try{({im,url}=await loadImage(file))}catch(e){setProg(null);toast('Fotoğraf açılamadı');return}
+async function fotoTuval(file){
+  const {im,url}=await loadImage(file);
   const max=2400,sc=Math.min(1,max/Math.max(im.naturalWidth,im.naturalHeight));
   const work=document.createElement('canvas');work.width=Math.round(im.naturalWidth*sc);work.height=Math.round(im.naturalHeight*sc);
   work.getContext('2d').drawImage(im,0,0,work.width,work.height);URL.revokeObjectURL(url);
-  const shot=$('shot');const vs=Math.min(1,1200/Math.max(work.width,work.height));shot.width=Math.round(work.width*vs);shot.height=Math.round(work.height*vs);
-  const sctx=shot.getContext('2d');sctx.drawImage(work,0,0,shot.width,shot.height);
-  await tick();
+  return work;
+}
+async function kodlariBul(work){
   let found=null;
   if(await wasmReady()){try{found=await detectWasm(work.getContext('2d').getImageData(0,0,work.width,work.height),1)}catch(e){found=null}}
   if(!found||!found.length)found=await detectNative(work);
   if(!found||!found.length)found=await detectZXing(work);
-  found=dedupe(found||[]);setProg(null);
+  return dedupe(found||[]);
+}
+async function fotoKodlari(file){return kodlariBul(await fotoTuval(file))}
+async function handlePhoto(file){
+  if(!file)return;
+  setProg(0.02);$('preview').hidden=false;$('shotChips').textContent='';
+  let work;try{work=await fotoTuval(file)}catch(e){setProg(null);toast('Fotoğraf açılamadı');return}
+  const shot=$('shot');const vs=Math.min(1,1200/Math.max(work.width,work.height));shot.width=Math.round(work.width*vs);shot.height=Math.round(work.height*vs);
+  const sctx=shot.getContext('2d');sctx.drawImage(work,0,0,shot.width,shot.height);
+  await tick();
+  const found=await kodlariBul(work);setProg(null);
   const okunan=found.map(f=>({f,p:parseCode(f.text)}));
   const gecerli=okunan.filter(x=>x.p);
   const sonuclar=gecerli.length?await okumaEkle(gecerli.map(x=>({p:x.p,kaynak:'foto'}))):[];
