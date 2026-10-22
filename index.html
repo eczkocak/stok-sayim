@@ -608,12 +608,14 @@ function wasmReady(){if(zwReady)return zwReady;
   zwReady=window.ZXingWASM.readBarcodes(new ImageData(8,8),{formats:['DataMatrix']}).then(()=>true,()=>false);return zwReady}
 // tryInvert: siyah zemine beyaz basılmış (ters renkli) karekodlar da okunur.
 const ZOPT={formats:['DataMatrix','EAN-13','EAN-8','QRCode','Code128'],tryHarder:true,tryRotate:true,tryInvert:true,maxNumberOfSymbols:255,textMode:'Plain'};
-/* Nokta nokta basılmış karekodlarda (çoğu siyah zeminli ilaç kutusu) yakından bakınca
-   noktalar arası boşluk okumayı bozar; görüntü yumuşatılınca noktalar birleşir. Bir
-   modül ~7-10 piksel iken 3 piksellik yumuşatma işe yarıyor; karekodun büyüklüğü
-   bilinmediği için görüntü ham ve birkaç ölçeğe küçültülüp yumuşatılmış olarak denenir
-   (5-30 piksellik modüller; küçültmek büyük yumuşatmadan çok daha ucuz). */
-const GECISLER=[{o:1,r:0},{o:1,r:3},{o:0.75,r:3},{o:0.55,r:3},{o:0.4,r:3},{o:0.28,r:3},{o:0.2,r:3}];
+/* Nokta nokta basılmış karekodlarda (çoğu siyah zeminli ilaç kutusu) noktalar arası
+   boşluk okumayı bozar; görüntü yumuşatılınca noktalar birleşir. Gereken yumuşatma
+   karekodun görüntüdeki büyüklüğüne ve noktaların sıklığına bağlı: sık noktalı gerçek
+   kutularda (22.10.2026, Tria kutusu fotoğrafı) ham görüntü ve 3 px okumuyor, 1 px okuyor;
+   aralıklı noktalılarda daha çok yumuşatma gerekiyor. Görüntü ham ve birkaç ölçeğe
+   küçültülüp yumuşatılmış olarak denenir; küçültmek büyük yumuşatmadan çok daha ucuz.
+   Set, gerçek kutu (0,5-2,8 kat uzaklık) ve 10-24 px aralıklı nokta denemelerini kapsar. */
+const GECISLER=[{o:1,r:0},{o:1,r:1},{o:0.75,r:2},{o:0.55,r:1},{o:0.4,r:2},{o:0.28,r:3},{o:0.2,r:2}];
 function yumusat(src,r){
   const w=src.width,h=src.height,s=src.data,nn=(2*r+1)*(2*r+1),g=new Uint8ClampedArray(w*h),t=new Uint16Array(w*h);
   for(let i=0,j=0;i<g.length;i++,j+=4)g[i]=(s[j]*77+s[j+1]*150+s[j+2]*29)>>8;
@@ -636,14 +638,15 @@ function gecisGoruntusu(kaynak,g,alan){
   return g.r?yumusat(veri,g.r):veri;
 }
 /* Canlı kamerada yumuşatılmış geçişler yalnız görüntünün ortasında denenir (kutu oraya
-   tutulur). Küçültülmüş geçişler çok ucuz (ortada ~20-45 ms) ve doğru büyüklük her karede
-   okur: hepsi aynı karede, ilk okuyanda durarak denenir. Okutan geçiş hatırlanır ve önce o
-   denenir. Pahalı iki geçiş (uzaktaki küçük karekodlar) dört karede bir eklenir. */
-const ORTA=0.75,UCUZ_GECIS=[3,4,5,6],PAHALI_GECIS=[2,1];
-let iyiGecis=(n=>n>=1&&n<GECISLER.length?n:0)(Number(lsGet('gecis')));
+   tutulur). Küçültülmüş geçişler çok ucuz (ortada ~20-45 ms): hepsi aynı karede, ilk
+   okuyanda durarak denenir. Okutan geçiş hatırlanır ve önce o denenir. Pahalı geçişler
+   (tam boyda hafif yumuşatma: uzaktaki küçük karekodlar) iki/dört karede bir eklenir. */
+const ORTA=0.75,UCUZ_GECIS=[3,4,5,6];
+let iyiGecis=(n=>n>=1&&n<GECISLER.length?n:0)(Number(lsGet('gecis2')));
 function canliGecisler(k){
   const sira=[...(iyiGecis?[iyiGecis]:[]),...UCUZ_GECIS.filter(g=>g!==iyiGecis)];
-  if(k%4===3){const p=PAHALI_GECIS[(k>>2)%PAHALI_GECIS.length];if(p!==iyiGecis)sira.push(p)}
+  if(k%2===1&&iyiGecis!==1)sira.push(1);
+  if(k%4===2&&iyiGecis!==2)sira.push(2);
   return sira;
 }
 // Yedek okuyucular (telefonun kendi okuyucusu, tekli okuyucu) ters renk denemez: görüntü evrilir.
@@ -806,7 +809,7 @@ async function detectFrame(v){
       const w=Math.round(fc.width*ORTA),h=Math.round(fc.height*ORTA),alan={x:(fc.width-w)>>1,y:(fc.height-h)>>1,w,h};
       for(const gi of canliGecisler(n>>1)){const g=GECISLER[gi];
         const bulunan=(await detectWasm(gecisGoruntusu(fc,g,alan),g.o)).map(f=>({...f,x:(alan.x+f.x)/sc,y:(alan.y+f.y)/sc,r:f.r/sc}));
-        if(bulunan.length){if(gi!==iyiGecis){iyiGecis=gi;lsSet('gecis',String(gi))}return bulunan}}
+        if(bulunan.length){if(gi!==iyiGecis){iyiGecis=gi;lsSet('gecis2',String(gi))}return bulunan}}
       return [];
     }catch(e){useWasm=false}}
   if(det){try{let kaynak=v;if(n%2){rc.width=vw;rc.height=vh;rctx.drawImage(v,0,0);kaynak=evirYerinde(rc)}
