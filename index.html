@@ -606,7 +606,37 @@ function wasmReady(){if(zwReady)return zwReady;
   try{window.ZXingWASM.setZXingModuleOverrides({locateFile:(yol,onek)=>yol.endsWith('.wasm')?new URL('vendor/zxing_reader.wasm',location.href).href:onek+yol})}
   catch(e){return zwReady=Promise.resolve(false)}
   zwReady=window.ZXingWASM.readBarcodes(new ImageData(8,8),{formats:['DataMatrix']}).then(()=>true,()=>false);return zwReady}
-const ZOPT={formats:['DataMatrix','EAN-13','EAN-8','QRCode','Code128'],tryHarder:true,tryRotate:true,maxNumberOfSymbols:255,textMode:'Plain'};
+// tryInvert: siyah zemine beyaz basılmış (ters renkli) karekodlar da okunur.
+const ZOPT={formats:['DataMatrix','EAN-13','EAN-8','QRCode','Code128'],tryHarder:true,tryRotate:true,tryInvert:true,maxNumberOfSymbols:255,textMode:'Plain'};
+/* Nokta nokta basılmış karekodlarda (çoğu siyah zeminli ilaç kutusu) yakından bakınca
+   noktalar arası boşluk okumayı bozar; görüntü yumuşatılınca noktalar birleşir. Bir
+   modül ~7-10 piksel iken 3 piksellik yumuşatma işe yarıyor; karekodun büyüklüğü
+   bilinmediği için görüntü ham ve birkaç ölçeğe küçültülüp yumuşatılmış olarak denenir
+   (5-30 piksellik modüller; küçültmek büyük yumuşatmadan çok daha ucuz). */
+const GECISLER=[{o:1,r:0},{o:1,r:3},{o:0.75,r:3},{o:0.55,r:3},{o:0.4,r:3},{o:0.28,r:3},{o:0.2,r:3}];
+function yumusat(src,r){
+  const w=src.width,h=src.height,s=src.data,nn=(2*r+1)*(2*r+1),g=new Uint8ClampedArray(w*h),t=new Uint16Array(w*h);
+  for(let i=0,j=0;i<g.length;i++,j+=4)g[i]=(s[j]*77+s[j+1]*150+s[j+2]*29)>>8;
+  for(let y=0;y<h;y++){const o=y*w;let a=0;for(let x=-r;x<=r;x++)a+=g[o+(x<0?0:x>=w?w-1:x)];
+    for(let x=0;x<w;x++){t[o+x]=a;const xa=x+r+1,xs=x-r;a+=g[o+(xa>=w?w-1:xa)]-g[o+(xs<0?0:xs)]}}
+  const out=new ImageData(w,h),d=out.data;
+  for(let x=0;x<w;x++){let a=0;for(let y=-r;y<=r;y++)a+=t[(y<0?0:y>=h?h-1:y)*w+x];
+    for(let y=0;y<h;y++){const v=a/nn,j=(y*w+x)*4;d[j]=d[j+1]=d[j+2]=v;d[j+3]=255;
+      const ya=y+r+1,ys=y-r;a+=t[(ya>=h?h-1:ya)*w+x]-t[(ys<0?0:ys)*w+x]}}
+  return out;
+}
+const gc=document.createElement('canvas'),gctx=gc.getContext('2d',{willReadFrequently:true});
+function gecisGoruntusu(kaynak,g){
+  let veri;
+  if(g.o===1)veri=kaynak.getContext('2d').getImageData(0,0,kaynak.width,kaynak.height);
+  else{gc.width=Math.max(1,Math.round(kaynak.width*g.o));gc.height=Math.max(1,Math.round(kaynak.height*g.o));
+    gctx.drawImage(kaynak,0,0,gc.width,gc.height);veri=gctx.getImageData(0,0,gc.width,gc.height)}
+  return g.r?yumusat(veri,g.r):veri;
+}
+// Yedek okuyucular (telefonun kendi okuyucusu, tekli okuyucu) ters renk denemez: görüntü evrilir.
+function evirYerinde(c){const x=c.getContext('2d'),d=x.getImageData(0,0,c.width,c.height),a=d.data;
+  for(let i=0;i<a.length;i+=4){a[i]=255-a[i];a[i+1]=255-a[i+1];a[i+2]=255-a[i+2]}x.putImageData(d,0,0);return c}
+function evir(c){const t=document.createElement('canvas');t.width=c.width;t.height=c.height;t.getContext('2d').drawImage(c,0,0);return evirYerinde(t)}
 async function detectWasm(imgData,scale){
   const r=await window.ZXingWASM.readBarcodes(imgData,ZOPT);
   return r.filter(b=>b.isValid&&b.text).map(b=>{const p=b.position,pts=[p.topLeft,p.topRight,p.bottomRight,p.bottomLeft];
@@ -664,11 +694,17 @@ async function fotoTuval(file){
   return work;
 }
 async function kodlariBul(work){
-  let found=null;
-  if(await wasmReady()){try{found=await detectWasm(work.getContext('2d').getImageData(0,0,work.width,work.height),1)}catch(e){found=null}}
-  if(!found||!found.length)found=await detectNative(work);
-  if(!found||!found.length)found=await detectZXing(work);
-  return dedupe(found||[]);
+  let found=[];
+  if(await wasmReady()){
+    for(let i=0;i<GECISLER.length;i++){const g=GECISLER[i];setProg((i+1)/(GECISLER.length+1));
+      try{found=found.concat(await detectWasm(gecisGoruntusu(work,g),g.o))}catch(e){}
+      await tick()}
+  }
+  if(!found.length)found=await detectNative(work)||[];
+  if(!found.length)found=await detectNative(evir(work))||[];
+  if(!found.length)found=await detectZXing(work);
+  if(!found.length)found=await detectZXing(evir(work));
+  return dedupe(found);
 }
 async function fotoKodlari(file){return kodlariBul(await fotoTuval(file))}
 async function handlePhoto(file){
@@ -707,7 +743,7 @@ $('galleryIn').addEventListener('change',async e=>{const fs=[...e.target.files];
 const canLive=window.isSecureContext&&!!(navigator.mediaDevices&&navigator.mediaDevices.getUserMedia);
 $('liveBtn').hidden=!canLive;
 if(canLive)$('photoBtn').classList.remove('primary');
-let useWasm=false,stream=null,running=false,det=null,zr=null,zhints=null,frameN=0,wake=null,torchOn=false;
+let useWasm=false,stream=null,running=false,det=null,zr=null,zhints=null,frameN=0,canliN=0,wake=null,torchOn=false;
 let liveAdded=0,liveDup=0;const seen=new Map(),statusOf=new Map();let marks=[];
 const fc=document.createElement('canvas'),fctx=fc.getContext('2d',{willReadFrequently:true});
 const rc=document.createElement('canvas'),rctx=rc.getContext('2d',{willReadFrequently:true});
@@ -747,10 +783,15 @@ function stopLive(){
 }
 async function detectFrame(v){
   const vw=v.videoWidth,vh=v.videoHeight;if(!vw)return [];
+  // Her iki kareden biri ham, öteki sırayla yumuşatılmış/küçültülmüş geçişlerden biri (GECISLER)
+  // ya da yedek okuyucularda renkleri evrilmiş kare (siyah zeminli karekodlar).
+  const n=canliN++;
   if(useWasm){const sc=Math.min(1,1920/Math.max(vw,vh));fc.width=Math.round(vw*sc);fc.height=Math.round(vh*sc);
     fctx.drawImage(v,0,0,fc.width,fc.height);
-    try{return await detectWasm(fctx.getImageData(0,0,fc.width,fc.height),sc)}catch(e){useWasm=false}}
-  if(det){try{const r=await det.detect(v);return r.map(b=>({text:b.rawValue,x:b.boundingBox.x+b.boundingBox.width/2,y:b.boundingBox.y+b.boundingBox.height/2,r:Math.max(b.boundingBox.width,b.boundingBox.height)/2}))}catch(e){return []}}
+    const g=n%2?GECISLER[1+((n>>1)%(GECISLER.length-1))]:GECISLER[0];
+    try{return await detectWasm(gecisGoruntusu(fc,g),sc*g.o)}catch(e){useWasm=false}}
+  if(det){try{let kaynak=v;if(n%2){rc.width=vw;rc.height=vh;rctx.drawImage(v,0,0);kaynak=evirYerinde(rc)}
+    const r=await det.detect(kaynak);return r.map(b=>({text:b.rawValue,x:b.boundingBox.x+b.boundingBox.width/2,y:b.boundingBox.y+b.boundingBox.height/2,r:Math.max(b.boundingBox.width,b.boundingBox.height)/2}))}catch(e){return []}}
   if(!zr)return [];
   const Z=window.ZXing;
   // each frame tries one region in turn: whole frame, centre, then overlapping quarters
@@ -759,6 +800,7 @@ async function detectFrame(v){
   const [rx,ry,rw,rh]=regions[frameN++%regions.length];
   const sx=rx*vw,sy=ry*vh,sw=rw*vw,sh=rh*vh,sc=Math.min(1,900/Math.max(sw,sh));
   rc.width=Math.round(sw*sc);rc.height=Math.round(sh*sc);rctx.drawImage(v,sx,sy,sw,sh,0,0,rc.width,rc.height);
+  if(Math.floor(frameN/regions.length)%2)evirYerinde(rc);   // bölgeler bir tur düz, bir tur ters
   try{const res=zr.decode(new Z.BinaryBitmap(new Z.HybridBinarizer(new Z.HTMLCanvasElementLuminanceSource(rc))),zhints);
     const pts=res.getResultPoints()||[];let cx=sw/2,cy=sh/2,rr=40;
     if(pts.length){cx=pts.reduce((a,p)=>a+p.getX(),0)/pts.length/sc;cy=pts.reduce((a,p)=>a+p.getY(),0)/pts.length/sc;rr=Math.max(20,...pts.map(p=>Math.hypot(p.getX()/sc-cx,p.getY()/sc-cy)))}
