@@ -626,12 +626,25 @@ function yumusat(src,r){
   return out;
 }
 const gc=document.createElement('canvas'),gctx=gc.getContext('2d',{willReadFrequently:true});
-function gecisGoruntusu(kaynak,g){
+/* alan: tuvalin yalnız bir bölümü (canlı kamerada görüntünün ortası); verilmezse tamamı. */
+function gecisGoruntusu(kaynak,g,alan){
+  const a=alan||{x:0,y:0,w:kaynak.width,h:kaynak.height};
   let veri;
-  if(g.o===1)veri=kaynak.getContext('2d').getImageData(0,0,kaynak.width,kaynak.height);
-  else{gc.width=Math.max(1,Math.round(kaynak.width*g.o));gc.height=Math.max(1,Math.round(kaynak.height*g.o));
-    gctx.drawImage(kaynak,0,0,gc.width,gc.height);veri=gctx.getImageData(0,0,gc.width,gc.height)}
+  if(g.o===1)veri=kaynak.getContext('2d').getImageData(a.x,a.y,a.w,a.h);
+  else{gc.width=Math.max(1,Math.round(a.w*g.o));gc.height=Math.max(1,Math.round(a.h*g.o));
+    gctx.drawImage(kaynak,a.x,a.y,a.w,a.h,0,0,gc.width,gc.height);veri=gctx.getImageData(0,0,gc.width,gc.height)}
   return g.r?yumusat(veri,g.r):veri;
+}
+/* Canlı kamerada yumuşatılmış geçişler yalnız görüntünün ortasında denenir (kutu oraya
+   tutulur). Küçültülmüş geçişler çok ucuz (ortada ~20-45 ms) ve doğru büyüklük her karede
+   okur: hepsi aynı karede, ilk okuyanda durarak denenir. Okutan geçiş hatırlanır ve önce o
+   denenir. Pahalı iki geçiş (uzaktaki küçük karekodlar) dört karede bir eklenir. */
+const ORTA=0.75,UCUZ_GECIS=[3,4,5,6],PAHALI_GECIS=[2,1];
+let iyiGecis=(n=>n>=1&&n<GECISLER.length?n:0)(Number(lsGet('gecis')));
+function canliGecisler(k){
+  const sira=[...(iyiGecis?[iyiGecis]:[]),...UCUZ_GECIS.filter(g=>g!==iyiGecis)];
+  if(k%4===3){const p=PAHALI_GECIS[(k>>2)%PAHALI_GECIS.length];if(p!==iyiGecis)sira.push(p)}
+  return sira;
 }
 // Yedek okuyucular (telefonun kendi okuyucusu, tekli okuyucu) ters renk denemez: görüntü evrilir.
 function evirYerinde(c){const x=c.getContext('2d'),d=x.getImageData(0,0,c.width,c.height),a=d.data;
@@ -783,13 +796,19 @@ function stopLive(){
 }
 async function detectFrame(v){
   const vw=v.videoWidth,vh=v.videoHeight;if(!vw)return [];
-  // Her iki kareden biri ham, öteki sırayla yumuşatılmış/küçültülmüş geçişlerden biri (GECISLER)
-  // ya da yedek okuyucularda renkleri evrilmiş kare (siyah zeminli karekodlar).
+  // Her iki kareden biri ham (bütün görüntü), öteki görüntünün ortasında yumuşatılmış geçişler
+  // (canliGecisler) ya da yedek okuyucularda renkleri evrilmiş kare (siyah zeminli karekodlar).
   const n=canliN++;
   if(useWasm){const sc=Math.min(1,1920/Math.max(vw,vh));fc.width=Math.round(vw*sc);fc.height=Math.round(vh*sc);
     fctx.drawImage(v,0,0,fc.width,fc.height);
-    const g=n%2?GECISLER[1+((n>>1)%(GECISLER.length-1))]:GECISLER[0];
-    try{return await detectWasm(gecisGoruntusu(fc,g),sc*g.o)}catch(e){useWasm=false}}
+    try{
+      if(n%2===0)return await detectWasm(fctx.getImageData(0,0,fc.width,fc.height),sc);
+      const w=Math.round(fc.width*ORTA),h=Math.round(fc.height*ORTA),alan={x:(fc.width-w)>>1,y:(fc.height-h)>>1,w,h};
+      for(const gi of canliGecisler(n>>1)){const g=GECISLER[gi];
+        const bulunan=(await detectWasm(gecisGoruntusu(fc,g,alan),g.o)).map(f=>({...f,x:(alan.x+f.x)/sc,y:(alan.y+f.y)/sc,r:f.r/sc}));
+        if(bulunan.length){if(gi!==iyiGecis){iyiGecis=gi;lsSet('gecis',String(gi))}return bulunan}}
+      return [];
+    }catch(e){useWasm=false}}
   if(det){try{let kaynak=v;if(n%2){rc.width=vw;rc.height=vh;rctx.drawImage(v,0,0);kaynak=evirYerinde(rc)}
     const r=await det.detect(kaynak);return r.map(b=>({text:b.rawValue,x:b.boundingBox.x+b.boundingBox.width/2,y:b.boundingBox.y+b.boundingBox.height/2,r:Math.max(b.boundingBox.width,b.boundingBox.height)/2}))}catch(e){return []}}
   if(!zr)return [];
@@ -810,6 +829,9 @@ async function detectFrame(v){
 function drawMarks(v){
   const ov=$('ov');if(ov.width!==v.videoWidth||ov.height!==v.videoHeight){ov.width=v.videoWidth;ov.height=v.videoHeight}
   const ctx=ov.getContext('2d');ctx.clearRect(0,0,ov.width,ov.height);const now=Date.now();marks=marks.filter(m=>now-m.t<700);
+  // Nişan çerçevesi: siyah zeminli/nokta baskılı karekodlar bu alanın içinde daha hızlı okunur (ORTA).
+  {const w=ov.width*ORTA,h=ov.height*ORTA;ctx.save();ctx.strokeStyle='rgba(255,255,255,.55)';ctx.lineWidth=Math.max(2,ov.width/400);
+    ctx.setLineDash([ov.width/40,ov.width/60]);ctx.strokeRect((ov.width-w)/2,(ov.height-h)/2,w,h);ctx.restore()}
   const css=getComputedStyle(document.documentElement);const col={added:css.getPropertyValue('--ok').trim(),dup:css.getPropertyValue('--warn').trim(),bad:css.getPropertyValue('--bad').trim()};
   for(const m of marks){ctx.lineWidth=Math.max(4,ov.width/180);ctx.strokeStyle=col[m.s]||'#fff';ctx.beginPath();ctx.arc(m.x,m.y,Math.max(24,m.r*1.2),0,Math.PI*2);ctx.stroke()}
 }
