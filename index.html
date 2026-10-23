@@ -133,7 +133,8 @@ textarea{width:100%;min-height:140px;font-family:ui-monospace,Consolas,Menlo,mon
 body.kamerada{overflow:hidden}
 .kamera{position:fixed;inset:0;z-index:12;background:#000;display:flex;flex-direction:column;color:#fff;
   height:100vh;height:100dvh}
-.kamera video,.kamera #ov{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.kamera video,.kamera #ov{position:absolute;left:0;top:0;right:0;bottom:0;width:100%;height:100%;object-fit:cover}
+.kamera video{background:#000}
 .tapstart{position:absolute;inset:0;margin:auto;width:max-content;height:max-content;background:var(--surface);color:var(--fg);z-index:3}
 .kam-ust,.kam-alt{position:relative;z-index:2;background:rgba(0,0,0,.5)}
 .kam-ust{display:flex;align-items:center;justify-content:space-between;gap:8px;
@@ -667,6 +668,7 @@ function siradakiniSor(){
     // Panel açıkken kamera durdu: hâlâ görünen kodlar "yeni" sayılıp yeniden sorulmasın.
     const t=Date.now();seen.forEach((v,k)=>seen.set(k,t));
     if(onceki&&onceki.kaynak==='okuyucu')$('scanIn').focus();
+    else{if(document.activeElement&&document.activeElement.blur)document.activeElement.blur();setTimeout(videoYenile,350)}   // klavye kapansın, kamera ekranı doldursun
     return;
   }
   duraklat=true;const {p,kaynak}=sorulan;
@@ -931,10 +933,15 @@ async function startLive(){
   if(!canLive){camErr();return}
   try{stream=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080}}})}
   catch(e){camErr();return}
-  const v=$('vid');v.muted=true;v.setAttribute('muted','');v.setAttribute('playsinline','');v.srcObject=stream;
+  // Her açılışta yeni <video>, ekran görünür olduktan sonra bağlanır: iPhone Safari, kapatılıp
+  // yeniden kullanılan ya da gizliyken başlatılan videoyu ekranı doldurmadan, küçük çiziyordu.
+  const v=document.createElement('video');v.id='vid';v.muted=true;v.playsInline=true;v.autoplay=true;
+  v.setAttribute('muted','');v.setAttribute('playsinline','');v.setAttribute('autoplay','');
+  $('vid').replaceWith(v);v.addEventListener('resize',videoYenile);
+  $('live').hidden=false;$('liveBtn').hidden=true;document.body.classList.add('kamerada');window.scrollTo(0,0);
+  v.srcObject=stream;
   if(v.readyState<1)await new Promise(r=>{v.onloadedmetadata=r;setTimeout(r,3000)});
   try{await v.play();$('tapStart').hidden=true}catch(e){$('tapStart').hidden=false}
-  $('live').hidden=false;$('liveBtn').hidden=true;document.body.classList.add('kamerada');
   // Android'de geri tuşu sayfadan çıkmak yerine kamerayı kapatsın
   if(!(history.state&&history.state.kamera))history.pushState({kamera:true},'');
   det=null;zr=null;
@@ -954,8 +961,15 @@ async function startLive(){
   kamSayacCiz();$('liveLast').textContent='Kodu çerçevenin içine tutun';$('torchBtn').classList.remove('acik');
   running=true;loop();
 }
+/* Görüntü boyutu değişince (yakınlaştırma, klavye, panel) iPhone Safari videoyu yeniden
+   yerleştirmeyebiliyor: bir kez gizleyip gösterince ekranı yeniden doldurur. */
+function videoYenile(){const v=$('vid');if(!v||$('live').hidden)return;
+  window.scrollTo(0,0);v.style.display='none';void v.offsetHeight;v.style.display=''}
+window.addEventListener('resize',videoYenile);
+if(window.visualViewport)visualViewport.addEventListener('resize',videoYenile);
 function stopLive(geriden){
   running=false;if(stream)stream.getTracks().forEach(t=>t.stop());stream=null;
+  try{const v=$('vid');v.pause();v.srcObject=null}catch(e){}
   try{wake&&wake.release()}catch(e){}wake=null;torchOn=false;
   $('live').hidden=true;$('liveBtn').hidden=!canLive;document.body.classList.remove('kamerada');
   try{if(document.fullscreenElement)document.exitFullscreen().catch(()=>{})}catch(e){}
@@ -1039,7 +1053,7 @@ async function loop(){
   if(!running)return;const v=$('vid');
   // Miad/adet paneli açıkken okuma durur (kamera açık kalır)
   if(v.readyState>=2){if(duraklat)drawMarks(v);else{const found=await detectFrame(v);if(!running)return;if(!duraklat)handleFound(found);drawMarks(v)}}
-  setTimeout(()=>requestAnimationFrame(loop),useWasm?10:det?100:30);
+  setTimeout(loop,useWasm?10:det?100:30);   // sayfa arka plana geçince kamera zaten kapanır (visibilitychange)
 }
 $('liveBtn').onclick=()=>{try{actx=actx||new (window.AudioContext||window.webkitAudioContext)()}catch(e){}
   // Telefonda tarayıcı çubukları da gizlensin (Android; iPhone Safari desteklemez, sessizce geçer)
