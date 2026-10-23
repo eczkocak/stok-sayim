@@ -139,7 +139,8 @@ body.kamerada{overflow:hidden}
 .kam-ust,.kam-alt{position:relative;z-index:2;background:rgba(0,0,0,.5)}
 .kam-ust{display:flex;align-items:center;justify-content:space-between;gap:8px;
   padding:calc(8px + env(safe-area-inset-top,0px)) max(12px,env(safe-area-inset-right)) 8px max(12px,env(safe-area-inset-left))}
-.kam-baslik{display:flex;flex-direction:column;align-items:center;line-height:1.25;min-width:0}
+.kam-baslik{display:flex;flex-direction:column;align-items:center;line-height:1.25;min-width:0;
+  user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;touch-action:manipulation}
 .kam-baslik b{font-size:1.05rem}
 .kam-baslik span{font-size:.72rem;opacity:.75}
 .kam-btn{width:46px;height:46px;min-height:46px;padding:0;border-radius:50%;flex:none;
@@ -293,7 +294,7 @@ body.kamerada{overflow:hidden}
   <button type="button" class="tapstart" id="tapStart" hidden>Kamerayı başlatmak için dokunun</button>
   <div class="kam-ust" id="kamUst">
     <button type="button" class="kam-btn" id="stopBtn" aria-label="Kamerayı kapat"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
-    <div class="kam-baslik"><b>Stok Sayım</b><span id="engine">Hazırlanıyor</span></div>
+    <div class="kam-baslik" id="kamBaslik"><b>Stok Sayım</b><span id="engine">Hazırlanıyor</span></div>
     <button type="button" class="kam-btn" id="kamGeriAl" aria-label="Son okumayı geri al"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg></button>
   </div>
   <div class="kam-alt" id="kamAlt">
@@ -384,7 +385,10 @@ async function durumCek(){
   if(cekiliyor){yineCek=true;return}
   cekiliyor=true;
   try{const v=await apiGet('durum',{rev:durum.rev});
-    if(v.degisti){durum=v;urunMap=new Map(v.urunler.map(u=>[u.gtin,u]));render()}}
+    if(v.degisti){durum=v;urunMap=new Map(v.urunler.map(u=>[u.gtin,u]));
+      // Yeni sayıma geçildiyse (bu ya da başka telefon) telefonun "sayıldı" hafızası boşalır
+      if(v.sayim){if(yerelSayim!==null&&yerelSayim!==v.sayim.id)yerelSayilan.clear();yerelSayim=v.sayim.id}
+      render()}}
   catch(e){}
   finally{cekiliyor=false;if(yineCek){yineCek=false;durumCek()}}
 }
@@ -590,7 +594,7 @@ function render(){
     const val=document.createElement('b');val.textContent=it.adet;
     const plus=document.createElement('button');plus.type='button';plus.textContent='+';plus.setAttribute('aria-label','Bir artır');
     minus.disabled=plus.disabled=!ben.ad;
-    minus.onclick=async()=>{try{await apiPost('sil',{gtin:it.gtin,sayim_id:durum.sayim&&durum.sayim.id});durumCek()}catch(e){toast(e.message)}};
+    minus.onclick=async()=>{try{await apiPost('sil',{gtin:it.gtin,sayim_id:durum.sayim&&durum.sayim.id});yerelUnut(null,it.gtin);durumCek()}catch(e){toast(e.message)}};
     plus.onclick=async()=>{const [r]=await okumaEkle([{p:{gtin:it.gtin,raw:ean(it.gtin)},kaynak:'elle'}]);if(r.sonuc==='kuyruk')toast('Bağlantı yok; bağlanınca gönderilecek')};
     qty.append(minus,val,plus);
     el.append(stripe,main,qty);
@@ -732,6 +736,7 @@ $('undoBtn').onclick=async()=>{
     try{await apiPost('sil',{istemci_id:x.istemci_id,sayim_id:x.sayim_id});n++}catch(e){kalan.push(x)}
   }));
   kuyrukKaydet();
+  yerelUnut(parcalar.filter(x=>!kalan.includes(x)).map(x=>x.istemci_id));   // geri alınan kutu yeniden okutulabilsin
   if(kalan.length){geriAl.push(kalan.length>1?{grup:kalan}:kalan[0]);toast('Bağlantı yok; '+kalan.length+' kutu geri alınamadı')}
   else toast(n>1?`Son giriş geri alındı (${n} kutu)`:'Son okuma geri alındı');
   durumCek();render();
@@ -758,7 +763,8 @@ const ZOPT={formats:['DataMatrix','EAN-13','EAN-8','QRCode','Code128'],tryHarder
    aralıklı noktalılarda daha çok yumuşatma gerekiyor. Görüntü ham ve birkaç ölçeğe
    küçültülüp yumuşatılmış olarak denenir; küçültmek büyük yumuşatmadan çok daha ucuz.
    Set, gerçek kutu (0,5-2,8 kat uzaklık) ve 10-24 px aralıklı nokta denemelerini kapsar. */
-const GECISLER=[{o:1,r:0},{o:1,r:1},{o:0.75,r:2},{o:0.55,r:1},{o:0.4,r:2},{o:0.28,r:3},{o:0.2,r:2}];
+// Sıra numaraları telefonda hatırlanır (gecis2): yeni geçiş sona eklenir.
+const GECISLER=[{o:1,r:0},{o:1,r:1},{o:0.75,r:2},{o:0.55,r:1},{o:0.4,r:2},{o:0.28,r:3},{o:0.2,r:2},{o:0.4,r:0}];
 function yumusat(src,r){
   const w=src.width,h=src.height,s=src.data,nn=(2*r+1)*(2*r+1),g=new Uint8ClampedArray(w*h),t=new Uint16Array(w*h);
   for(let i=0,j=0;i<g.length;i++,j+=4)g[i]=(s[j]*77+s[j+1]*150+s[j+2]*29)>>8;
@@ -784,7 +790,7 @@ function gecisGoruntusu(kaynak,g,alan){
    tutulur). Küçültülmüş geçişler çok ucuz (ortada ~20-45 ms): hepsi aynı karede, ilk
    okuyanda durarak denenir. Okutan geçiş hatırlanır ve önce o denenir. Pahalı geçişler
    (tam boyda hafif yumuşatma: uzaktaki küçük karekodlar) iki/dört karede bir eklenir. */
-const UCUZ_GECIS=[3,4,5,6];
+const UCUZ_GECIS=[3,7,4,5,6];
 /* Okuma çerçevesi (video koordinatlarında): ekran video'yu object-fit:cover ile kırptığı için
    önce görünen bölüm bulunur, sonra üst/alt şeritlerin arasında kalan kısım biraz içeriden
    alınır. Yumuşatılmış geçişler yalnız burada denenir; çerçeve de buraya çizilir. */
@@ -924,12 +930,20 @@ if(canLive)$('photoBtn').classList.remove('primary');
 let useWasm=false,stream=null,running=false,det=null,zr=null,zhints=null,frameN=0,canliN=0,wake=null,torchOn=false;
 let liveAdded=0,liveDup=0;const seen=new Map(),statusOf=new Map();let marks=[];
 function kamSayacCiz(){$('liveAdded').textContent=liveAdded;$('liveDup').textContent=liveDup?`Bu okuma · ${liveDup} tekrar`:'Bu okuma'}
+/* Bu telefonda sayılan karekodlar (sayım|gtin|seri -> istemci_id): canlı okumada aynı kutu
+   Google'a sormadan "zaten sayıldı" denir ve yeni kutunun onayı beklemeden verilir. */
+const yerelSayilan=new Map();   // sayım değişince boşaltılır (durumCek, yeni sayım)
+let yerelSayim=null;
+const yerelAnahtar=p=>`${p.gtin}|${p.serial}`;
+function yerelUnut(istemciIdler,gtin){
+  for(const [k,id] of [...yerelSayilan])if((id&&istemciIdler&&istemciIdler.includes(id))||(gtin&&k.split('|')[0]===gtin))yerelSayilan.delete(k);
+}
 const fc=document.createElement('canvas'),fctx=fc.getContext('2d',{willReadFrequently:true});
 const rc=document.createElement('canvas'),rctx=rc.getContext('2d',{willReadFrequently:true});
 function camErr(){const e=$('camErr');e.hidden=false;
   e.textContent='Kamera açılamadı. Tarayıcıda bu sayfaya kamera izni verin; olmazsa "Fotoğrafla toplu oku" düğmesini kullanın.'}
 async function startLive(){
-  $('camErr').hidden=true;
+  $('camErr').hidden=true;motorHazir=false;$('engine').textContent='Hazırlanıyor';
   if(!canLive){camErr();return}
   try{stream=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080}}})}
   catch(e){camErr();return}
@@ -954,8 +968,10 @@ async function startLive(){
   useWasm=await wasmReady();
   try{const tr=stream.getVideoTracks()[0];const c=tr.getCapabilities?tr.getCapabilities():{};
     if(c.focusMode&&c.focusMode.includes('continuous'))await tr.applyConstraints({advanced:[{focusMode:'continuous'}]});
-    const z=$('zoom');if(c.zoom&&c.zoom.max>c.zoom.min){$('zoomRow').hidden=false;z.min=c.zoom.min;z.max=Math.min(c.zoom.max,4);z.step=c.zoom.step||0.1;z.value=Math.min(Math.max(c.zoom.min,1.5),z.max);tr.applyConstraints({advanced:[{zoom:+z.value}]}).catch(()=>{})}else $('zoomRow').hidden=true}catch(e){}
-  $('engine').textContent=useWasm?'Çoklu okuma':det?'Yerel okuyucu':'Tekli okuma';
+    const z=$('zoom');if(c.zoom&&c.zoom.max>c.zoom.min){$('zoomRow').hidden=false;z.min=c.zoom.min;z.max=Math.min(c.zoom.max,4);z.step=c.zoom.step||0.1;z.value=Math.min(Math.max(c.zoom.min,2),z.max);tr.applyConstraints({advanced:[{zoom:+z.value}]}).catch(()=>{})}else $('zoomRow').hidden=true}catch(e){}
+  // 2x: sensör kameranın verdiği görüntüden çok daha ayrıntılı; yakınlaştırmak küçük/nokta baskılı
+  // karekoda gerçek ayrıntı katar ve kutunun odaklanabilen uzaklıktan (20-25 cm) tutulmasını sağlar.
+  motorHazir=true;motorYaz();
   try{wake=await navigator.wakeLock.request('screen')}catch(e){wake=null}
   liveAdded=0;liveDup=0;seen.clear();statusOf.clear();marks=[];
   kamSayacCiz();$('liveLast').textContent='Kodu çerçevenin içine tutun';$('torchBtn').classList.remove('acik');
@@ -964,7 +980,22 @@ async function startLive(){
 /* Görüntü boyutu değişince (yakınlaştırma, klavye, panel) iPhone Safari videoyu yeniden
    yerleştirmeyebiliyor: bir kez gizleyip gösterince ekranı yeniden doldurur. */
 function videoYenile(){const v=$('vid');if(!v||$('live').hidden)return;
-  window.scrollTo(0,0);v.style.display='none';void v.offsetHeight;v.style.display=''}
+  window.scrollTo(0,0);v.style.display='none';void v.offsetHeight;v.style.display='';motorYaz()}
+// Başlığın altında okuyucu ve kameranın verdiği çözünürlük (yavaş okumada ilk bakılacak şey)
+let motorHazir=false;   // okuyucu seçilmeden "Tekli okuma" yazmasın
+function motorYaz(){if(!motorHazir)return;const v=$('vid'),m=useWasm?'Çoklu okuma':det?'Yerel okuyucu':'Tekli okuma';
+  $('engine').textContent=m+(v&&v.videoWidth?` · ${v.videoWidth}×${v.videoHeight}`:'')}
+/* Tanı: başlığa uzun basınca kameranın o anki karesi tam çözünürlükte kaydedilir; okunmayan
+   bir karekodun karesi gönderilirse okuyucu o telefonun görüntüsüyle ayarlanabilir. */
+function kareKaydet(){const v=$('vid');if(!v||!v.videoWidth)return;
+  const c=document.createElement('canvas');c.width=v.videoWidth;c.height=v.videoHeight;c.getContext('2d').drawImage(v,0,0);
+  c.toBlob(b=>{if(!b)return;const a=document.createElement('a'),d=new Date(),p=n=>String(n).padStart(2,'0');
+    a.href=URL.createObjectURL(b);a.download=`kare-${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}-${c.width}x${c.height}.jpg`;
+    document.body.append(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},3000);toast(`Kare kaydedildi (${c.width}×${c.height})`)},'image/jpeg',0.92)}
+{let zaman=null;const b=$('kamBaslik'),birak=()=>{clearTimeout(zaman);zaman=null};
+  b.addEventListener('pointerdown',()=>{birak();zaman=setTimeout(()=>{zaman=null;kareKaydet()},700)});
+  ['pointerup','pointerleave','pointercancel'].forEach(o=>b.addEventListener(o,birak));
+  b.addEventListener('contextmenu',e=>e.preventDefault())}
 window.addEventListener('resize',videoYenile);
 if(window.visualViewport)visualViewport.addEventListener('resize',videoYenile);
 function stopLive(geriden){
@@ -1038,13 +1069,18 @@ function handleFound(found){
     }
     else if(yeni){
       if(!p){statusOf.set(f.text,'bad');beep(false);$('liveLast').textContent='Tanınmayan kod'}
-      else{statusOf.set(f.text,'bekliyor');   // sunucunun yanıtına kadar beyaz halka
-        okumaEkle([{p,kaynak:'kamera'}]).then(([r])=>{
-          const eklendi=r.sonuc==='eklendi'||r.sonuc==='kuyruk';
-          statusOf.set(f.text,eklendi?'added':r.sonuc==='tekrar'?'dup':'bad');
-          if(eklendi){liveAdded++;beep(true)}else if(r.sonuc==='tekrar')liveDup++;else beep(false);
-          $('liveLast').textContent=sonucMetni(r,p.gtin);
-          kamSayacCiz()})}
+      else{const anahtar=yerelAnahtar(p);
+        if(yerelSayilan.has(anahtar)){statusOf.set(f.text,'dup');liveDup++;$('liveLast').textContent='Bu kutu zaten sayıldı';kamSayacCiz()}
+        else{
+          // Onay hemen: Google'ın yanıtı (1-2 sn) beklenmez, kayıt arka planda gider.
+          yerelSayilan.set(anahtar,'');statusOf.set(f.text,'added');liveAdded++;beep(true);
+          $('liveLast').textContent=(nameOf(p.gtin)||ean(p.gtin))+' +1';kamSayacCiz();
+          okumaEkle([{p,kaynak:'kamera'}]).then(([r])=>{
+            if(r.istemci_id)yerelSayilan.set(anahtar,r.istemci_id);
+            if(r.sonuc==='eklendi'||r.sonuc==='kuyruk')return;
+            liveAdded--;   // Google düzeltti: kutu başka telefonda sayılmış ya da kayıt reddedildi
+            if(r.sonuc==='tekrar'){liveDup++;statusOf.set(f.text,'dup')}else{yerelSayilan.delete(anahtar);statusOf.set(f.text,'bad')}
+            beep(false);$('liveLast').textContent=sonucMetni(r,p.gtin);toast(sonucMetni(r,p.gtin));kamSayacCiz()})}}
     }
     marks.push({x:f.x,y:f.y,r:f.r,s:statusOf.get(f.text),t:now});
   }
