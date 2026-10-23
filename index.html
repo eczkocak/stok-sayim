@@ -129,12 +129,33 @@ textarea{width:100%;min-height:140px;font-family:ui-monospace,Consolas,Menlo,mon
 #bagKod{align-self:center;background:#fff;padding:10px;border-radius:10px;border:1px solid var(--line);line-height:0}
 #bagKod svg{width:min(280px,70vw);height:auto;display:block}
 .live{display:flex;flex-direction:column;gap:8px}
-.viewer{position:relative;border-radius:12px;overflow:hidden;background:#000;aspect-ratio:3/4;max-height:70vh;max-width:100%}
-.viewer video,.viewer canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
-.livebar{position:absolute;left:8px;right:8px;bottom:8px;display:flex;gap:6px;flex-wrap:wrap}
-.tapstart{position:absolute;inset:0;margin:auto;width:max-content;height:max-content;background:var(--surface);color:var(--fg);z-index:2}
-.livebar .chip{box-shadow:0 2px 8px rgba(0,0,0,.3)}
-#liveLast{background:var(--surface);color:var(--fg);max-width:100%;overflow:hidden;text-overflow:ellipsis}
+/* Tam ekran canlı kamera (miad/adet paneli ve bildirimler bunun üstünde kalır) */
+body.kamerada{overflow:hidden}
+.kamera{position:fixed;inset:0;z-index:12;background:#000;display:flex;flex-direction:column;color:#fff;
+  height:100vh;height:100dvh}
+.kamera video,.kamera #ov{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.tapstart{position:absolute;inset:0;margin:auto;width:max-content;height:max-content;background:var(--surface);color:var(--fg);z-index:3}
+.kam-ust,.kam-alt{position:relative;z-index:2;background:rgba(0,0,0,.5)}
+.kam-ust{display:flex;align-items:center;justify-content:space-between;gap:8px;
+  padding:calc(8px + env(safe-area-inset-top,0px)) max(12px,env(safe-area-inset-right)) 8px max(12px,env(safe-area-inset-left))}
+.kam-baslik{display:flex;flex-direction:column;align-items:center;line-height:1.25;min-width:0}
+.kam-baslik b{font-size:1.05rem}
+.kam-baslik span{font-size:.72rem;opacity:.75}
+.kam-btn{width:46px;height:46px;min-height:46px;padding:0;border-radius:50%;flex:none;
+  background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.3);color:#fff}
+.kam-btn:hover{color:#fff;border-color:#fff}
+.kam-btn.buyuk{width:58px;height:58px}
+.kam-btn.acik{background:#f5c542;border-color:#f5c542;color:#1F1A1B}
+#torchBtn{visibility:hidden}
+.kam-alt{margin-top:auto;display:flex;flex-direction:column;align-items:center;gap:10px;
+  padding:12px max(16px,env(safe-area-inset-right)) calc(14px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left))}
+.kam-son{max-width:100%;background:rgba(255,255,255,.94);color:#1F1A1B;border-radius:999px;padding:7px 16px;
+  font-weight:650;font-size:.92rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.kam-zoom{display:flex;align-items:center;gap:10px;width:100%;max-width:420px}
+.kam-zoom input{flex:1}
+.kam-sayac{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;width:100%;max-width:520px;text-align:center}
+.kam-sayac b{display:block;font-size:1.7rem;line-height:1.15;font-variant-numeric:tabular-nums}
+.kam-sayac span{font-size:.85rem;opacity:.85}
 
 /* ? ipucu: Streamlit'in help= ikonu ve balonuyla aynı görünüm (ortak/eczane_tema.py
    ara_baslik). Dokunmatik ekranda dokununca açılır. */
@@ -195,13 +216,6 @@ textarea{width:100%;min-height:140px;font-family:ui-monospace,Consolas,Menlo,mon
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 7V4h3M18 4h3v3M21 17v3h-3M6 20H3v-3M7 12h10"/></svg>
       Sürekli oku (canlı kamera)
     </button>
-    <div class="live" id="live" hidden>
-      <div class="viewer"><video id="vid" playsinline muted autoplay></video><canvas id="ov"></canvas><button type="button" class="tapstart" id="tapStart" hidden>Kamerayı başlatmak için dokunun</button>
-        <div class="livebar"><span class="chip ok" id="liveAdded">0 eklendi</span><span class="chip warn" id="liveDup">0 tekrar</span><span class="chip" id="liveLast">Kameraya kod gösterin</span></div>
-      </div>
-      <div class="row" id="zoomRow" hidden><label for="zoom" style="flex:1 1 100%;display:flex;gap:8px;align-items:center"><span class="hint">Yakınlaştır</span><input type="range" id="zoom" style="flex:1"></label></div>
-      <div class="row"><span class="chip" id="engine">Hazırlanıyor</span><button type="button" id="torchBtn" hidden>Fener</button><button type="button" id="stopBtn" style="flex:1">Durdur</button></div>
-    </div>
     <p class="confirm" id="camErr" hidden></p>
     <div class="row">
       <label class="btn primary big" for="photoIn" id="photoBtn">
@@ -270,6 +284,26 @@ textarea{width:100%;min-height:140px;font-family:ui-monospace,Consolas,Menlo,mon
     <div class="label">SAYIMLAR</div>
     <div class="gecmis" id="gecmis"></div>
   </section>
+</div>
+<!-- Canlı kamera: tam ekran. Üstte kapat / başlık / geri al, ortada okuma çerçevesi
+     (tuvale çizilir), altta son okunan, toplam, fener ve bu açılıştaki okuma sayısı. -->
+<div class="kamera" id="live" hidden>
+  <video id="vid" playsinline muted autoplay></video><canvas id="ov"></canvas>
+  <button type="button" class="tapstart" id="tapStart" hidden>Kamerayı başlatmak için dokunun</button>
+  <div class="kam-ust" id="kamUst">
+    <button type="button" class="kam-btn" id="stopBtn" aria-label="Kamerayı kapat"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    <div class="kam-baslik"><b>Stok Sayım</b><span id="engine">Hazırlanıyor</span></div>
+    <button type="button" class="kam-btn" id="kamGeriAl" aria-label="Son okumayı geri al"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg></button>
+  </div>
+  <div class="kam-alt" id="kamAlt">
+    <div class="kam-son" id="liveLast">Kodu çerçevenin içine tutun</div>
+    <label class="kam-zoom" id="zoomRow" hidden for="zoom"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5M11 8v6M8 11h6"/></svg><input type="range" id="zoom" aria-label="Yakınlaştır"></label>
+    <div class="kam-sayac">
+      <div><b id="kamToplam">0</b><span>Toplam</span></div>
+      <button type="button" class="kam-btn buyuk" id="torchBtn" aria-label="Fener"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M13 2L4 14h7l-1 8 9-12h-7z"/></svg></button>
+      <div><b id="liveAdded">0</b><span id="liveDup">Bu okuma</span></div>
+    </div>
+  </div>
 </div>
 <div class="perde" id="maPerde" hidden></div>
 <section class="sheet" id="maSheet" hidden role="dialog" aria-label="Miad ve adet">
@@ -522,7 +556,7 @@ function render(){
   const items=durum.urunler;
   let boxes=0,soon=0,exp=0;
   for(const it of items){boxes+=it.adet;const s=expStatus(minExp(it));if(s==='warn')soon++;if(s==='bad')exp++}
-  $('stKinds').textContent=items.length;$('stBoxes').textContent=boxes;$('stSoon').textContent=soon;$('stExp').textContent=exp;
+  $('stKinds').textContent=items.length;$('stBoxes').textContent=boxes;$('kamToplam').textContent=boxes+kuyruk.length;$('stSoon').textContent=soon;$('stExp').textContent=exp;
   $('undoBtn').disabled=!geriAl.length;
   baglantiCiz();
   $('sessionLine').textContent=durum.sayim?`Sayım #${durum.sayim.id} · başlangıç ${fmtZaman(durum.sayim.baslangic)}`:'';
@@ -662,7 +696,7 @@ async function maKaydet(){
   if(grup.length>1){geriAl=geriAl.filter(g=>!idler.has(g.istemci_id));geriAl.push({grup})}
   const iso=skt&&parseYYMMDD(skt);
   beep(n>0);toast(n?`${sonuc[0].ad||nameOf(p.gtin)||ean(p.gtin)} +${n}${iso?' · SKT '+fmtExp(iso):''}${sonuc.some(r=>r.sonuc==='kuyruk')?' · bağlantı yok, bekliyor':''}`:'Kaydedilemedi');
-  if(kaynak==='kamera'){liveAdded+=n;$('liveAdded').textContent=liveAdded+' eklendi'}
+  if(kaynak==='kamera'){liveAdded+=n;kamSayacCiz()}
   render();
 }
 $('maKaydet').onclick=maKaydet;
@@ -748,7 +782,17 @@ function gecisGoruntusu(kaynak,g,alan){
    tutulur). Küçültülmüş geçişler çok ucuz (ortada ~20-45 ms): hepsi aynı karede, ilk
    okuyanda durarak denenir. Okutan geçiş hatırlanır ve önce o denenir. Pahalı geçişler
    (tam boyda hafif yumuşatma: uzaktaki küçük karekodlar) iki/dört karede bir eklenir. */
-const ORTA=0.75,UCUZ_GECIS=[3,4,5,6];
+const UCUZ_GECIS=[3,4,5,6];
+/* Okuma çerçevesi (video koordinatlarında): ekran video'yu object-fit:cover ile kırptığı için
+   önce görünen bölüm bulunur, sonra üst/alt şeritlerin arasında kalan kısım biraz içeriden
+   alınır. Yumuşatılmış geçişler yalnız burada denenir; çerçeve de buraya çizilir. */
+function cerceve(v){
+  const vw=v.videoWidth,vh=v.videoHeight,ew=v.clientWidth||vw,eh=v.clientHeight||vh,s=Math.max(ew/vw,eh/vh);
+  const gx=(vw-ew/s)/2,gy=(vh-eh/s)/2;   // görünen bölümün video'daki sol üstü
+  const ust=$('kamUst').offsetHeight,alt=$('kamAlt').offsetHeight,kx=ew*0.06,ky=Math.min(24,eh*0.03);
+  const x1=kx,x2=ew-kx,y1=ust+ky,y2=Math.max(y1+40,eh-alt-ky);
+  return {x:Math.max(0,gx+x1/s),y:Math.max(0,gy+y1/s),w:Math.min(vw,(x2-x1)/s),h:Math.min(vh,(y2-y1)/s),s};
+}
 let iyiGecis=(n=>n>=1&&n<GECISLER.length?n:0)(Number(lsGet('gecis2')));
 function canliGecisler(k){
   const sira=[...(iyiGecis?[iyiGecis]:[]),...UCUZ_GECIS.filter(g=>g!==iyiGecis)];
@@ -877,6 +921,7 @@ $('liveBtn').hidden=!canLive;
 if(canLive)$('photoBtn').classList.remove('primary');
 let useWasm=false,stream=null,running=false,det=null,zr=null,zhints=null,frameN=0,canliN=0,wake=null,torchOn=false;
 let liveAdded=0,liveDup=0;const seen=new Map(),statusOf=new Map();let marks=[];
+function kamSayacCiz(){$('liveAdded').textContent=liveAdded;$('liveDup').textContent=liveDup?`Bu okuma · ${liveDup} tekrar`:'Bu okuma'}
 const fc=document.createElement('canvas'),fctx=fc.getContext('2d',{willReadFrequently:true});
 const rc=document.createElement('canvas'),rctx=rc.getContext('2d',{willReadFrequently:true});
 function camErr(){const e=$('camErr');e.hidden=false;
@@ -889,14 +934,16 @@ async function startLive(){
   const v=$('vid');v.muted=true;v.setAttribute('muted','');v.setAttribute('playsinline','');v.srcObject=stream;
   if(v.readyState<1)await new Promise(r=>{v.onloadedmetadata=r;setTimeout(r,3000)});
   try{await v.play();$('tapStart').hidden=true}catch(e){$('tapStart').hidden=false}
-  $('live').hidden=false;$('liveBtn').hidden=true;
+  $('live').hidden=false;$('liveBtn').hidden=true;document.body.classList.add('kamerada');
+  // Android'de geri tuşu sayfadan çıkmak yerine kamerayı kapatsın
+  if(!(history.state&&history.state.kamera))history.pushState({kamera:true},'');
   det=null;zr=null;
   if('BarcodeDetector' in window){try{const sup=await BarcodeDetector.getSupportedFormats();
     if(sup.includes('data_matrix'))det=new BarcodeDetector({formats:['data_matrix','ean_13','ean_8','qr_code','code_128'].filter(f=>sup.includes(f))})}catch(e){}}
   if(!det&&window.ZXing){const Z=window.ZXing;zhints=new Map();
     zhints.set(Z.DecodeHintType.POSSIBLE_FORMATS,[Z.BarcodeFormat.DATA_MATRIX,Z.BarcodeFormat.EAN_13,Z.BarcodeFormat.EAN_8,Z.BarcodeFormat.QR_CODE,Z.BarcodeFormat.CODE_128]);
     zr=new Z.MultiFormatReader();zr.setHints(zhints)}
-  try{const tr=stream.getVideoTracks()[0];const c=tr.getCapabilities&&tr.getCapabilities();$('torchBtn').hidden=!(c&&c.torch)}catch(e){}
+  try{const tr=stream.getVideoTracks()[0];const c=tr.getCapabilities&&tr.getCapabilities();$('torchBtn').style.visibility=c&&c.torch?'visible':'hidden'}catch(e){}
   useWasm=await wasmReady();
   try{const tr=stream.getVideoTracks()[0];const c=tr.getCapabilities?tr.getCapabilities():{};
     if(c.focusMode&&c.focusMode.includes('continuous'))await tr.applyConstraints({advanced:[{focusMode:'continuous'}]});
@@ -904,13 +951,15 @@ async function startLive(){
   $('engine').textContent=useWasm?'Çoklu okuma':det?'Yerel okuyucu':'Tekli okuma';
   try{wake=await navigator.wakeLock.request('screen')}catch(e){wake=null}
   liveAdded=0;liveDup=0;seen.clear();statusOf.clear();marks=[];
-  $('liveAdded').textContent='0 eklendi';$('liveDup').textContent='0 tekrar';$('liveLast').textContent='Kameraya kod gösterin';
+  kamSayacCiz();$('liveLast').textContent='Kodu çerçevenin içine tutun';$('torchBtn').classList.remove('acik');
   running=true;loop();
 }
-function stopLive(){
+function stopLive(geriden){
   running=false;if(stream)stream.getTracks().forEach(t=>t.stop());stream=null;
   try{wake&&wake.release()}catch(e){}wake=null;torchOn=false;
-  $('live').hidden=true;$('liveBtn').hidden=!canLive;
+  $('live').hidden=true;$('liveBtn').hidden=!canLive;document.body.classList.remove('kamerada');
+  try{if(document.fullscreenElement)document.exitFullscreen().catch(()=>{})}catch(e){}
+  if(!geriden&&history.state&&history.state.kamera)history.back();
   if(liveAdded)toast(`Canlı okuma: ${liveAdded} kutu eklendi`);
 }
 async function detectFrame(v){
@@ -922,7 +971,7 @@ async function detectFrame(v){
     fctx.drawImage(v,0,0,fc.width,fc.height);
     try{
       if(n%2===0)return await detectWasm(fctx.getImageData(0,0,fc.width,fc.height),sc);
-      const w=Math.round(fc.width*ORTA),h=Math.round(fc.height*ORTA),alan={x:(fc.width-w)>>1,y:(fc.height-h)>>1,w,h};
+      const c=cerceve(v),alan={x:Math.round(c.x*sc),y:Math.round(c.y*sc),w:Math.round(c.w*sc),h:Math.round(c.h*sc)};
       for(const gi of canliGecisler(n>>1)){const g=GECISLER[gi];
         const bulunan=(await detectWasm(gecisGoruntusu(fc,g,alan),g.o)).map(f=>({...f,x:(alan.x+f.x)/sc,y:(alan.y+f.y)/sc,r:f.r/sc}));
         if(bulunan.length){if(gi!==iyiGecis){iyiGecis=gi;lsSet('gecis2',String(gi))}return bulunan}}
@@ -948,9 +997,11 @@ async function detectFrame(v){
 function drawMarks(v){
   const ov=$('ov');if(ov.width!==v.videoWidth||ov.height!==v.videoHeight){ov.width=v.videoWidth;ov.height=v.videoHeight}
   const ctx=ov.getContext('2d');ctx.clearRect(0,0,ov.width,ov.height);const now=Date.now();marks=marks.filter(m=>now-m.t<700);
-  // Nişan çerçevesi: siyah zeminli/nokta baskılı karekodlar bu alanın içinde daha hızlı okunur (ORTA).
-  {const w=ov.width*ORTA,h=ov.height*ORTA;ctx.save();ctx.strokeStyle='rgba(255,255,255,.55)';ctx.lineWidth=Math.max(2,ov.width/400);
-    ctx.setLineDash([ov.width/40,ov.width/60]);ctx.strokeRect((ov.width-w)/2,(ov.height-h)/2,w,h);ctx.restore()}
+  // Okuma çerçevesi: köşe çizgileri (siyah zeminli/nokta baskılı karekodlar bunun içinde daha hızlı okunur)
+  {const c=cerceve(v),u=Math.min(c.w,c.h)*0.12,lw=4/c.s;ctx.save();ctx.strokeStyle=getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()||'#A5121B';
+    ctx.lineWidth=lw;ctx.lineCap='round';ctx.beginPath();
+    for(const [x,y,dx,dy] of [[c.x,c.y,1,1],[c.x+c.w,c.y,-1,1],[c.x,c.y+c.h,1,-1],[c.x+c.w,c.y+c.h,-1,-1]]){ctx.moveTo(x+dx*u,y);ctx.lineTo(x,y);ctx.lineTo(x,y+dy*u)}
+    ctx.stroke();ctx.strokeStyle='rgba(255,255,255,.35)';ctx.lineWidth=1.5/c.s;ctx.strokeRect(c.x,c.y,c.w,c.h);ctx.restore()}
   const css=getComputedStyle(document.documentElement);const col={added:css.getPropertyValue('--ok').trim(),dup:css.getPropertyValue('--warn').trim(),bad:css.getPropertyValue('--bad').trim(),sor:css.getPropertyValue('--accent').trim(),gec:'#8C8384'};
   for(const m of marks){ctx.lineWidth=Math.max(4,ov.width/180);ctx.strokeStyle=col[m.s]||'#fff';ctx.beginPath();ctx.arc(m.x,m.y,Math.max(24,m.r*1.2),0,Math.PI*2);ctx.stroke()}
 }
@@ -979,7 +1030,7 @@ function handleFound(found){
           statusOf.set(f.text,eklendi?'added':r.sonuc==='tekrar'?'dup':'bad');
           if(eklendi){liveAdded++;beep(true)}else if(r.sonuc==='tekrar')liveDup++;else beep(false);
           $('liveLast').textContent=sonucMetni(r,p.gtin);
-          $('liveAdded').textContent=liveAdded+' eklendi';$('liveDup').textContent=liveDup+' tekrar'})}
+          kamSayacCiz()})}
     }
     marks.push({x:f.x,y:f.y,r:f.r,s:statusOf.get(f.text),t:now});
   }
@@ -990,11 +1041,16 @@ async function loop(){
   if(v.readyState>=2){if(duraklat)drawMarks(v);else{const found=await detectFrame(v);if(!running)return;if(!duraklat)handleFound(found);drawMarks(v)}}
   setTimeout(()=>requestAnimationFrame(loop),useWasm?10:det?100:30);
 }
-$('liveBtn').onclick=()=>{try{actx=actx||new (window.AudioContext||window.webkitAudioContext)()}catch(e){}startLive()};
-$('stopBtn').onclick=stopLive;
+$('liveBtn').onclick=()=>{try{actx=actx||new (window.AudioContext||window.webkitAudioContext)()}catch(e){}
+  // Telefonda tarayıcı çubukları da gizlensin (Android; iPhone Safari desteklemez, sessizce geçer)
+  try{const d=document.documentElement;if(d.requestFullscreen&&matchMedia('(pointer:coarse)').matches)d.requestFullscreen({navigationUI:'hide'}).catch(()=>{})}catch(e){}
+  startLive()};
+$('stopBtn').onclick=()=>stopLive();
+$('kamGeriAl').onclick=()=>$('undoBtn').onclick();
+window.addEventListener('popstate',()=>{if(running)stopLive(true)});
 $('tapStart').onclick=()=>{$('vid').play().then(()=>$('tapStart').hidden=true,()=>toast('Kamera görüntüsü başlatılamadı'))};
 $('zoom').addEventListener('input',e=>{try{stream.getVideoTracks()[0].applyConstraints({advanced:[{zoom:+e.target.value}]})}catch(err){}});
-$('torchBtn').onclick=async()=>{try{torchOn=!torchOn;await stream.getVideoTracks()[0].applyConstraints({advanced:[{torch:torchOn}]})}catch(e){toast('Fener açılamadı')}};
+$('torchBtn').onclick=async()=>{try{torchOn=!torchOn;await stream.getVideoTracks()[0].applyConstraints({advanced:[{torch:torchOn}]});$('torchBtn').classList.toggle('acik',torchOn)}catch(e){torchOn=!torchOn;toast('Fener açılamadı')}};
 document.addEventListener('visibilitychange',()=>{if(document.hidden){if(running)stopLive()}else{durumCek();kuyrukGonder()}});
 
 /* ---------- product list import ---------- */
