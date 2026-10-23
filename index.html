@@ -75,6 +75,11 @@ input[type=text],input[type=search],select{font:inherit;border:1px solid var(--l
 .progress i{display:block;height:100%;background:var(--accent);width:0;transition:width .15s}
 .listhead{display:flex;gap:8px;flex-wrap:wrap}
 .listhead input{flex:1 1 180px}
+.kisiler{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.kisi{min-height:38px;padding:4px 13px;border-radius:999px;font-size:.88rem;gap:7px}
+.kisi b{font-variant-numeric:tabular-nums;color:var(--muted)}
+.kisi[aria-pressed=true],.kisi[aria-pressed=true]:hover{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.kisi[aria-pressed=true] b{color:inherit}
 .list{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--surface);box-shadow:var(--golge)}
 .item{display:grid;grid-template-columns:4px 1fr auto;gap:0 12px;border-top:1px solid var(--line);align-items:stretch}
 .item:first-child{border-top:0}
@@ -244,6 +249,10 @@ body.kamerada{overflow:hidden}
   </section>
 
   <section aria-label="Sayım listesi" style="display:flex;flex-direction:column;gap:10px">
+    <div id="kisiSatir" style="display:flex;flex-direction:column;gap:6px" hidden>
+      <div class="label">SAYANLAR<span class="ipucu" tabindex="0" data-ipucu="Bütün telefonlardan okutulanlar burada toplanır. Bir kişiye dokunun: liste yalnız onun okuttuğu ürünleri ve onun saydığı adetleri gösterir. Herkes: toplam."></span></div>
+      <div class="kisiler" id="kisiler" role="group" aria-label="Sayanlar"></div>
+    </div>
     <div class="listhead">
       <input id="search" type="search" placeholder="Ürün adı veya barkod ara" aria-label="Ara">
       <select id="sort" aria-label="Sırala">
@@ -564,18 +573,23 @@ function render(){
   $('stKinds').textContent=items.length;$('stBoxes').textContent=boxes;$('kamToplam').textContent=boxes+kuyruk.length;$('stSoon').textContent=soon;$('stExp').textContent=exp;
   $('undoBtn').disabled=!geriAl.length;
   baglantiCiz();
-  $('sessionLine').textContent=durum.sayim?`Sayım #${durum.sayim.id} · başlangıç ${fmtZaman(durum.sayim.baslangic)}`:'';
   const nb=$('namesInfo').querySelector('.balon');
   if(nb)nb.textContent=(durum.urun_adi_sayisi?`${durum.urun_adi_sayisi.toLocaleString('tr-TR')} ürün ismi yüklü. `:'')+$('namesInfo').dataset.ipucu;
   gecmisCiz();
+  const kisi=kisilerCiz(items,boxes);
+  // Kişi seçiliyken adet o kişinin saydığıdır; +/− toplamı değiştirdiği için gizlenir.
+  const adetOf=it=>kisi?(it.kisiler[kisi]||0):it.adet;
+  let satir=durum.sayim?`Sayım #${durum.sayim.id} · başlangıç ${fmtZaman(durum.sayim.baslangic)}`:'';
+  if(kisi){const ks=items.filter(it=>it.kisiler[kisi]);satir+=` · ${kisi}: ${ks.length} çeşit, ${ks.reduce((t,it)=>t+it.kisiler[kisi],0)} kutu`}
+  $('sessionLine').textContent=satir;
 
   const q=$('search').value.trim().toLocaleLowerCase('tr-TR');
-  let rows=items.filter(it=>!q||it.gtin.includes(q)||(it.ad||'').toLocaleLowerCase('tr-TR').includes(q));
+  let rows=items.filter(it=>(!kisi||it.kisiler[kisi])&&(!q||it.gtin.includes(q)||(it.ad||'').toLocaleLowerCase('tr-TR').includes(q)));
   const srt=$('sort').value;
   rows.sort((a,b)=>srt==='name'?(a.ad||'~'+a.gtin).localeCompare(b.ad||'~'+b.gtin,'tr')
-    :srt==='qty'?b.adet-a.adet:srt==='exp'?(minExp(a)||'9').localeCompare(minExp(b)||'9'):(b.son||'').localeCompare(a.son||''));
+    :srt==='qty'?adetOf(b)-adetOf(a):srt==='exp'?(minExp(a)||'9').localeCompare(minExp(b)||'9'):(b.son||'').localeCompare(a.son||''));
   const list=$('list');list.textContent='';
-  if(!rows.length){const e=document.createElement('div');e.className='empty';e.textContent=items.length?'Aramaya uyan ürün yok.':'Henüz okutulan ürün yok.';list.append(e);return}
+  if(!rows.length){const e=document.createElement('div');e.className='empty';e.textContent=!items.length?'Henüz okutulan ürün yok.':q?'Aramaya uyan ürün yok.':`${kisi} henüz ürün okutmadı.`;list.append(e);return}
   for(const it of rows){
     const me=minExp(it),st=expStatus(me);
     const el=document.createElement('div');el.className='item'+(st&&st!=='ok'?' s-'+st:'');
@@ -586,17 +600,18 @@ function render(){
     const code=document.createElement('span');code.className='mono';code.textContent=ean(it.gtin);meta.append(code);
     if(me){const c=document.createElement('span');c.className='chip '+(st==='ok'?'':st);c.textContent=(st==='bad'?'Miadı geçti ':'SKT ')+fmtExp(me);meta.append(c)}
     const nl=it.partiler.length;if(nl>1){const c=document.createElement('span');c.textContent=nl+' parti';meta.append(c)}
+    if(kisi&&adetOf(it)!==it.adet){const c=document.createElement('span');c.className='chip';c.textContent='Toplam '+it.adet;meta.append(c)}
     main.append(nm,meta);
     const tog=()=>{openGtin=openGtin===it.gtin?null:it.gtin;render()};
     main.onclick=tog;main.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();tog()}};
     const qty=document.createElement('div');qty.className='qty';
     const minus=document.createElement('button');minus.type='button';minus.textContent='−';minus.setAttribute('aria-label','Bir azalt');
-    const val=document.createElement('b');val.textContent=it.adet;
+    const val=document.createElement('b');val.textContent=adetOf(it);
     const plus=document.createElement('button');plus.type='button';plus.textContent='+';plus.setAttribute('aria-label','Bir artır');
     minus.disabled=plus.disabled=!ben.ad;
     minus.onclick=async()=>{try{await apiPost('sil',{gtin:it.gtin,sayim_id:durum.sayim&&durum.sayim.id});yerelUnut(null,it.gtin);durumCek()}catch(e){toast(e.message)}};
     plus.onclick=async()=>{const [r]=await okumaEkle([{p:{gtin:it.gtin,raw:ean(it.gtin)},kaynak:'elle'}]);if(r.sonuc==='kuyruk')toast('Bağlantı yok; bağlanınca gönderilecek')};
-    qty.append(minus,val,plus);
+    if(kisi)qty.append(val);else qty.append(minus,val,plus);
     el.append(stripe,main,qty);
     if(openGtin===it.gtin){
       const d=document.createElement('div');d.className='details';
@@ -617,6 +632,19 @@ function render(){
     }
     list.append(el);
   }
+}
+// Sayanlar: Herkes + her kişinin kutu sayısı; dokununca liste o kişiye süzülür. Seçili kişiyi döndürür.
+let kisiSec='';
+function kisilerCiz(items,boxes){
+  const top=new Map();
+  for(const it of items)for(const [k,a] of Object.entries(it.kisiler))top.set(k,(top.get(k)||0)+a);
+  if(!top.has(kisiSec))kisiSec='';
+  const kutu=$('kisiler');kutu.textContent='';$('kisiSatir').hidden=!top.size;
+  const dugme=(k,ad,n)=>{const b=document.createElement('button');b.type='button';b.className='kisi';b.setAttribute('aria-pressed',String(kisiSec===k));
+    const s=document.createElement('b');s.textContent=n;b.append(ad,s);b.onclick=()=>{kisiSec=k;render()};kutu.append(b)};
+  dugme('','Herkes',boxes);
+  [...top].sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0],'tr')).forEach(([k,n])=>dugme(k,k,n));
+  return kisiSec;
 }
 function gecmisCiz(){
   const g=$('gecmis');g.textContent='';
