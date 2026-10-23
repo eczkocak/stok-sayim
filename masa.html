@@ -1,0 +1,394 @@
+<!doctype html>
+<html lang="tr"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#A5121B">
+<title>Stok Sayım Masası</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='5' fill='%23A5121B'/%3E%3Cpath d='M5 8V5h3M16 5h3v3M19 16v3h-3M8 19H5v-3M8.5 9v6M11 9v6M13.5 9v6M16 9v6' fill='none' stroke='%23fff' stroke-width='1.6' stroke-linecap='round'/%3E%3C/svg%3E">
+<!--
+  Stok Sayım masası (eczanedeki bilgisayar). Telefonların yazdığı Google E-Tablosunu
+  canlı okur: kim hangi ilaçtan kaç kutu saydı, Tria karekod listesi (TXT), kişi
+  listesi (TXT), geçmiş sayımlar, telefon bağlama. Kamera yok, okuma yapmaz.
+
+  Telefon sayfasıyla (index.html) aynı kurulumu kullanır: adres ve anahtar
+  tarayıcıda saklanır (stok-url, stok-k), sayfada yazılı değildir. Görünüm
+  index.html'deki renk ve bileşenlerle aynıdır.
+-->
+<style>
+:root{
+  --bg:#F1EFEF; --surface:#ffffff; --sunk:#F6F2F2; --line:#E6DFDF;
+  --fg:#1F1A1B; --muted:#5B5354; --muted-2:#8C8384;
+  --accent:#A5121B; --accent-dark:#7E0D14; --accent-ink:#ffffff; --accent-soft:#FBEDEE;
+  --ok:#1d7a4f; --ok-soft:#dff2e8; --warn:#9a5b00; --warn-soft:#fdf0d6; --bad:#b4232c; --bad-soft:#fbe2e3;
+  --golge:0 1px 2px rgba(60,20,22,.05), 0 8px 22px -14px rgba(60,20,22,.25);
+  color-scheme:light;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{margin:0}
+body{background:var(--bg);color:var(--fg);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+  font-size:15px;line-height:1.45;padding:16px 16px 40px}
+.wrap{max-width:1280px;margin:0 auto;display:flex;flex-direction:column;gap:14px}
+.bant{display:flex;align-items:center;gap:12px;background:linear-gradient(115deg,var(--accent-dark) 0%,var(--accent) 60%,#B8242D 100%);
+  color:#fff;border-radius:16px;padding:12px 16px;box-shadow:0 10px 24px -20px rgba(126,13,20,.8)}
+.bant__ikon{flex:0 0 42px;width:42px;height:42px;border-radius:12px;display:grid;place-items:center;
+  background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.25)}
+.bant__ad{font-size:21px;font-weight:750;letter-spacing:-.02em;line-height:26px;flex:1 1 auto;min-width:0}
+.bant__ad small{display:block;font-size:13px;font-weight:600;opacity:.85;letter-spacing:0;line-height:18px}
+.bant__sag{display:flex;flex-direction:column;align-items:flex-end;gap:4px}
+.bant .chip{background:rgba(255,255,255,.16);color:#fff}
+.bant .chip.bad{background:#fff;color:var(--bad)}
+.bant .zaman{font-size:.78rem;opacity:.85}
+.chip{font-size:.78rem;font-weight:650;border-radius:999px;padding:3px 10px;background:var(--sunk);color:var(--muted);white-space:nowrap}
+.chip.warn{background:var(--warn-soft);color:var(--warn)}.chip.bad{background:var(--bad-soft);color:var(--bad)}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.stat{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 14px;min-width:0}
+.stat b{display:block;font-size:1.5rem;font-variant-numeric:tabular-nums;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.stat span{font-size:.72rem;color:var(--muted);font-weight:650;letter-spacing:.05em}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:var(--golge);padding:14px 16px;display:flex;flex-direction:column;gap:12px;min-width:0}
+.label{display:flex;align-items:center;gap:7px;font-size:13px;font-weight:750;letter-spacing:.07em;color:var(--accent)}
+.label::after{content:"";flex:1 1 auto;height:1px;background:#F1D3D5;order:99}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+button,.btn{font:inherit;font-weight:650;border-radius:10px;border:1px solid var(--line);background:var(--surface);color:var(--fg);
+  padding:9px 14px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:42px;text-decoration:none}
+button:hover{border-color:var(--accent);color:var(--accent)}
+button:disabled{opacity:.5;cursor:default;border-color:var(--line);color:var(--fg)}
+button:focus-visible,input:focus-visible,select:focus-visible,tr:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);box-shadow:0 8px 18px -12px rgba(126,13,20,.95)}
+.primary:hover{background:var(--accent-dark);border-color:var(--accent-dark);color:var(--accent-ink)}
+.danger{color:var(--bad)}
+input[type=text],input[type=search]{font:inherit;border:1px solid var(--line);background:var(--surface);color:var(--fg);border-radius:10px;padding:9px 12px;min-height:42px}
+.secim{display:flex;align-items:center;gap:6px;font-size:.88rem;color:var(--muted);font-weight:600;cursor:pointer}
+.secim input{width:16px;height:16px;accent-color:var(--accent)}
+.duzen{display:grid;grid-template-columns:300px 1fr;gap:14px;align-items:start}
+@media (max-width:900px){.duzen{grid-template-columns:1fr}.stats{grid-template-columns:repeat(2,1fr)}}
+table{border-collapse:collapse;width:100%;font-size:.9rem}
+th{text-align:left;color:var(--muted-2);font-weight:700;font-size:.72rem;letter-spacing:.06em;padding:6px 8px;border-bottom:1px solid var(--line);white-space:nowrap;background:var(--surface);position:sticky;top:0}
+td{padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+tr:last-child td{border-bottom:0}
+.s{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.mono{font-family:ui-monospace,Consolas,Menlo,monospace;font-size:.84rem;color:var(--muted);white-space:nowrap}
+.bos{color:var(--muted-2)}
+.isimsiz{color:var(--muted);font-style:italic}
+.kisiler tbody tr{cursor:pointer}
+.kisiler tbody tr:hover td{background:var(--sunk)}
+.kisiler tr.secili td{background:var(--accent-soft);color:var(--accent-dark);font-weight:700}
+.tablo{overflow:auto;max-height:70vh;border:1px solid var(--line);border-radius:10px}
+.matris td.s b{font-weight:750}
+.matris td.sifir{color:#cfc6c7}
+.grup{border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.grup h3{margin:0;padding:9px 12px;font-size:.95rem;background:var(--sunk);display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
+.grup h3 span{font-size:.82rem;color:var(--muted);font-weight:600}
+.gruplar{display:flex;flex-direction:column;gap:12px}
+.sekme{display:inline-flex;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.sekme button{border:0;border-radius:0;min-height:40px}
+.sekme button[aria-pressed=true]{background:var(--accent);color:var(--accent-ink)}
+.listhead{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.listhead input{flex:1 1 220px}
+.empty{padding:28px 16px;text-align:center;color:var(--muted)}
+.confirm{background:var(--bad-soft);color:var(--bad);border-radius:10px;padding:10px 12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:space-between;font-size:.9rem;margin:0}
+.bagbox{display:flex;gap:16px;align-items:center;flex-wrap:wrap}
+.bagbox svg{width:220px;height:220px;background:#fff;border:1px solid var(--line);border-radius:10px;padding:6px}
+.bagbox .row{flex:1 1 320px}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:20px;background:var(--fg);color:#fff;
+  padding:10px 16px;border-radius:10px;font-weight:650;font-size:.9rem;max-width:calc(100% - 32px);z-index:20;box-shadow:0 6px 20px rgba(0,0,0,.25)}
+/* ? ipucu: telefon sayfasındakiyle aynı */
+.ipucu{position:relative;display:inline-flex;align-items:center;cursor:default;color:rgba(49,51,63,.6);outline:none;letter-spacing:normal;font-weight:400}
+.ipucu svg{width:16px;height:16px;display:block}
+.ipucu .balon{display:none;position:absolute;top:calc(100% + 6px);left:50%;transform:translateX(-50%);z-index:30;
+  width:max-content;max-width:min(340px,calc(100vw - 24px));background:#fff;color:var(--fg);border-radius:8px;
+  padding:12px 14px;font-size:14px;line-height:22px;box-shadow:0 2px 12px rgba(0,0,0,.18);white-space:normal;text-transform:none}
+.ipucu:hover .balon,.ipucu:focus .balon{display:block}
+.ipucu.sol .balon{left:auto;right:-8px;transform:none}
+</style>
+</head><body>
+
+<div class="wrap">
+  <header class="bant">
+    <div class="bant__ikon"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><path d="M3 7V4h3M18 4h3v3M21 17v3h-3M6 20H3v-3M7.5 8v8M10.5 8v8M13.5 8v8M16.5 8v8"/></svg></div>
+    <div class="bant__ad">Stok Sayım<small id="sayimSatir">Sayım masası</small></div>
+    <div class="bant__sag">
+      <span class="chip" id="baglanti">Bağlanıyor</span>
+      <span class="zaman" id="guncel"></span>
+    </div>
+  </header>
+
+  <section class="panel" id="kurulumYok" hidden aria-label="Kurulum">
+    <div class="label">KURULUM GEREKLİ<span class="ipucu" tabindex="0" data-ipucu="Google E-Tablosundaki Kurulum sayfasının B4 hücresindeki telefon bağlantısını kopyalayıp buraya yapıştırın. Bu bilgisayar bir kez kurulunca hatırlar."></span></div>
+    <form class="row" id="kurForm" autocomplete="off">
+      <input id="kurIn" type="text" placeholder="Kurulum bağlantısını yapıştırın" aria-label="Kurulum bağlantısı" style="flex:1 1 320px">
+      <button type="submit" class="primary">Kaydet</button>
+    </form>
+  </section>
+
+  <div id="icerik" hidden style="display:flex;flex-direction:column;gap:14px">
+    <section class="stats" aria-label="Özet">
+      <div class="stat"><b id="stSayim">—</b><span id="stSayimAlt">AÇIK SAYIM</span></div>
+      <div class="stat"><b id="stCesit">0</b><span>ÇEŞİT</span></div>
+      <div class="stat"><b id="stKutu">0</b><span>KUTU</span></div>
+      <div class="stat"><b id="stKisi">0</b><span>SAYAN</span></div>
+    </section>
+
+    <section class="panel" aria-label="Dışa aktarma">
+      <div class="label">TXT AL<span class="ipucu" tabindex="0" data-ipucu="Karekod listesi: açık sayımda okutulan her kutu bir satır (Tria'ya aktarılacak dosya); karekodsuz ürünler barkod olarak yazılır. Kişi listesi: kim hangi ilaçtan kaç kutu saydı; solda bir kişi seçiliyse yalnız onunki. Dosyalar İndirilenler klasörüne iner."></span></div>
+      <div class="row">
+        <button type="button" class="primary" id="txtBtn">Karekod listesi (TXT)</button>
+        <label class="secim"><input type="checkbox" id="gsOpt">GS ayırıcı<span class="ipucu" tabindex="0" data-ipucu="Tria karekodları GS (grup ayırıcı) karakteriyle istiyorsa işaretleyin. Bilmiyorsanız işaretlemeyin."></span></label>
+        <button type="button" id="kisiTxtBtn">Kişi listesi (TXT)</button>
+        <button type="button" id="csvBtn">Ürün listesi (CSV)</button>
+        <span style="flex:1 1 auto"></span>
+        <button type="button" id="bagBtn">Telefon bağla</button>
+        <button type="button" id="resetBtn" class="danger">Yeni sayım başlat</button>
+      </div>
+      <div class="confirm" id="resetConfirm" hidden>
+        <span>Açık sayım kapatılsın ve yeni sayım başlasın mı? Kapanan sayım silinmez, aşağıdaki listede kalır. Bütün telefonlar yeni sayıma geçer.</span>
+        <span class="row"><button type="button" id="resetNo">Vazgeç</button><button type="button" id="resetYes" class="primary">Evet, yeni sayım</button></span>
+      </div>
+      <div class="bagbox" id="bagBox" hidden>
+        <div id="bagKod"></div>
+        <div style="display:flex;flex-direction:column;gap:8px;flex:1 1 320px">
+          <div class="label">TELEFON BAĞLA<span class="ipucu sol" tabindex="0" data-ipucu="Yeni telefonda eczkocak.github.io/stok-sayim adresini açıp 'Kurulum karekodunu okut'a basın ve bu karekodun fotoğrafını çekin. Karekod ve bağlantı Google'a yazma anahtarını içerir; yalnız eczane personeliyle paylaşın."></span></div>
+          <div class="row"><input id="bagIn" type="text" readonly aria-label="Kurulum bağlantısı" style="flex:1 1 240px"><button type="button" id="bagKopya">Kopyala</button><button type="button" id="bagKapat">Kapat</button></div>
+        </div>
+      </div>
+    </section>
+
+    <div class="duzen">
+      <section class="panel" aria-label="Sayanlar">
+        <div class="label">SAYANLAR<span class="ipucu" tabindex="0" data-ipucu="Bütün telefonlardan okutulanlar. Bir kişiye tıklayın: sağdaki liste ve Kişi listesi (TXT) yalnız onu gösterir. Herkes: hepsi."></span></div>
+        <table class="kisiler">
+          <thead><tr><th>KİŞİ</th><th class="s">ÇEŞİT</th><th class="s">KUTU</th></tr></thead>
+          <tbody id="kisiGovde"></tbody>
+        </table>
+      </section>
+
+      <section class="panel" aria-label="Sayım listesi">
+        <div class="listhead">
+          <div class="sekme" role="group" aria-label="Görünüm">
+            <button type="button" data-gorunum="kisi" aria-pressed="true">Kişi bazında</button>
+            <button type="button" data-gorunum="urun" aria-pressed="false">Ürün bazında</button>
+          </div>
+          <input id="ara" type="search" placeholder="İlaç adı veya barkod ara" aria-label="Ara">
+        </div>
+        <div id="liste"></div>
+      </section>
+    </div>
+
+    <section class="panel" aria-label="Sayımlar">
+      <div class="label">SAYIMLAR<span class="ipucu" tabindex="0" data-ipucu="Son 20 sayım. Kapanmış bir sayımın karekod listesini (TXT) ve ürün listesini (CSV) buradan alabilirsiniz."></span></div>
+      <div class="tablo" style="max-height:none">
+        <table>
+          <thead><tr><th>NO</th><th>BAŞLANGIÇ</th><th>BİTİŞ</th><th class="s">KUTU</th><th></th></tr></thead>
+          <tbody id="gecmisGovde"></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+</div>
+<div class="toast" id="toast" role="status" hidden></div>
+
+<script src="vendor/zxing-library.min.js"></script>
+<script>
+(function(){
+const $=id=>document.getElementById(id);
+function lsGet(k){try{return localStorage.getItem('stok-'+k)}catch(e){return null}}
+function lsSet(k,v){try{localStorage.setItem('stok-'+k,v)}catch(e){}}
+
+/* ---------- kurulum (index.html ile aynı) ---------- */
+const tamAdres=u=>/^[\w-]{20,}$/.test(u)?`https://script.google.com/macros/s/${u}/exec`:u;
+function kurulumCoz(metin){
+  const s=String(metin||'').trim(),i=s.indexOf('#');
+  const h=new URLSearchParams(i>=0?s.slice(i+1):s);
+  const url=tamAdres(h.get('u')||''),k=h.get('k')||'';
+  return /^https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec$/.test(url)&&/^[\w-]{8,64}$/.test(k)?{url,k}:null;
+}
+const ayar={url:tamAdres(lsGet('url')||''),k:lsGet('k')||''};
+{const a=kurulumCoz(location.hash);
+  if(a){ayar.url=a.url;ayar.k=a.k;lsSet('url',a.url);lsSet('k',a.k)}
+  if(location.hash)history.replaceState(null,'',location.pathname+location.search)}
+// Telefonlar için bağlantı: telefon sayfasını (index.html) açar.
+function kurulumBaglantisi(){
+  const m=ayar.url.match(/^https:\/\/script\.google\.com\/macros\/s\/([\w-]+)\/exec$/);
+  return `${new URL('./',location.href).href}#u=${m?m[1]:encodeURIComponent(ayar.url)}&k=${ayar.k}`;
+}
+function kurulumCiz(){const k=!!ayar.url;$('kurulumYok').hidden=k;$('icerik').hidden=!k}
+$('kurForm').onsubmit=e=>{e.preventDefault();const a=kurulumCoz($('kurIn').value);
+  if(!a){toast('Bağlantı tanınmadı; E-Tablodaki Kurulum!B4 bağlantısını yapıştırın');return}
+  ayar.url=a.url;ayar.k=a.k;lsSet('url',a.url);lsSet('k',a.k);$('kurIn').value='';kurulumCiz();durumCek()};
+
+/* ---------- Google ---------- */
+let bagli=null;
+function baglantiCiz(){const c=$('baglanti');c.className='chip'+(bagli===false?' bad':'');
+  c.textContent=bagli===false?'Bağlantı yok':bagli?'Bağlı':'Bağlanıyor'}
+async function istek(url,secenek,metin){
+  const ac=new AbortController(),t=setTimeout(()=>ac.abort(),30000);let g;
+  try{const r=await fetch(url,{...secenek,signal:ac.signal});if(!r.ok)throw 0;g=await r.text()}
+  catch(e){bagli=false;baglantiCiz();const h=new Error('Bağlantı yok');h.ag=true;throw h}
+  finally{clearTimeout(t)}
+  if(!bagli){bagli=true;baglantiCiz()}
+  if(metin&&!g.startsWith('{"hata"'))return g;
+  let v;try{v=JSON.parse(g)}catch(e){const h=new Error('Sunucu yanıtı okunamadı');h.ag=true;throw h}
+  if(v.hata)throw new Error(v.hata);
+  return v;
+}
+const apiGet=(islem,p={},metin=false)=>istek(ayar.url+'?'+new URLSearchParams({islem,k:ayar.k,...p}),{cache:'no-store'},metin);
+const apiPost=(islem,g={})=>istek(ayar.url,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({...g,islem,k:ayar.k})});
+
+let durum={rev:'',sayim:null,urunler:[],gecmis:[]};
+let cekiliyor=false;
+async function durumCek(){
+  if(!ayar.url||cekiliyor)return;
+  cekiliyor=true;
+  try{const v=await apiGet('durum',{rev:durum.rev});
+    $('guncel').textContent='Güncellendi '+new Date().toLocaleTimeString('tr-TR');
+    if(v.degisti){durum=v;ciz()}}
+  catch(e){if(!e.ag)toast(e.message)}
+  finally{cekiliyor=false}
+}
+setInterval(()=>{if(!document.hidden)durumCek()},4000);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)durumCek()});
+
+/* ---------- yardımcılar ---------- */
+const ean=g=>g.startsWith('0')?g.slice(1):g;
+const adOf=u=>u.ad||'İsimsiz ürün';
+function fmtZaman(iso){if(!iso)return '';const d=new Date(iso);return isNaN(d)?iso:d.toLocaleString('tr-TR',{dateStyle:'medium',timeStyle:'short'})}
+const dosyaTarih=s=>String(s.baslangic||'').slice(0,10);
+const sayimNo=s=>String(s.id).padStart(4,'0');
+let toastT;function toast(m){const t=$('toast');t.textContent=m;t.hidden=false;clearTimeout(toastT);toastT=setTimeout(()=>t.hidden=true,3000)}
+function el(etiket,sinif,metin){const e=document.createElement(etiket);if(sinif)e.className=sinif;if(metin!=null)e.textContent=metin;return e}
+function indirDosya(ad,metin,tur){
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([metin],{type:tur}));a.download=ad;
+  document.body.append(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},2000);
+}
+async function sayimIndir(s,tur,gs){
+  try{const t=await apiGet(tur,{sayim:s.id,gs:gs?'1':'0'},true);
+    if(tur==='txt'&&!t){toast(`Sayım #${s.id}'de okutulmuş kutu yok`);return}
+    indirDosya(`sayim-${sayimNo(s)}-${dosyaTarih(s)}.${tur}`,t,tur==='txt'?'text/plain;charset=utf-8':'text/csv;charset=utf-8');
+    toast(tur==='txt'?`Karekod listesi indirildi (${t.split('\r\n').length} satır)`:'Ürün listesi indirildi')}
+  catch(e){toast(e.ag?'Bağlantı yok; indirilemedi':e.message)}
+}
+
+/* ---------- kişi × ilaç ---------- */
+let kisiSec='',gorunum=lsGet('masa-gorunum')||'kisi';
+// kişi -> {cesit, kutu, urunler:[{u, adet}]}
+function kisiTablosu(){
+  const m=new Map();
+  for(const u of durum.urunler)for(const [k,a] of Object.entries(u.kisiler)){
+    let t=m.get(k);if(!t){t={cesit:0,kutu:0,urunler:[]};m.set(k,t)}
+    t.cesit++;t.kutu+=a;t.urunler.push({u,adet:a})}
+  for(const t of m.values())t.urunler.sort((a,b)=>adOf(a.u).localeCompare(adOf(b.u),'tr'));
+  return new Map([...m].sort((a,b)=>b[1].kutu-a[1].kutu||a[0].localeCompare(b[0],'tr')));
+}
+function ciz(){listeCiz();gecmisCiz()}
+function listeCiz(){
+  const s=durum.sayim,kisiler=kisiTablosu();
+  if(!kisiler.has(kisiSec))kisiSec='';
+  const kutu=durum.urunler.reduce((t,u)=>t+u.adet,0);
+  $('stSayim').textContent=s?'#'+s.id:'—';
+  $('stSayimAlt').textContent=s?'AÇIK SAYIM · '+fmtZaman(s.baslangic).toLocaleUpperCase('tr-TR'):'AÇIK SAYIM';
+  $('stCesit').textContent=durum.urunler.length;$('stKutu').textContent=kutu;$('stKisi').textContent=kisiler.size;
+  $('sayimSatir').textContent=s?`Sayım #${s.id} · başlangıç ${fmtZaman(s.baslangic)}`:'Sayım masası';
+  $('kisiTxtBtn').textContent=kisiSec?`${kisiSec} listesi (TXT)`:'Kişi listesi (TXT)';
+
+  const g=$('kisiGovde');g.textContent='';
+  const satir=(k,ad,cesit,n)=>{const tr=el('tr',kisiSec===k?'secili':'');tr.tabIndex=0;
+    tr.append(el('td','',ad),el('td','s',cesit),el('td','s',n));
+    const sec=()=>{kisiSec=k;ciz()};tr.onclick=sec;tr.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();sec()}};g.append(tr)};
+  satir('','Herkes',durum.urunler.length,kutu);
+  for(const [k,t] of kisiler)satir(k,k,t.cesit,t.kutu);
+
+  document.querySelectorAll('.sekme button').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.gorunum===gorunum)));
+  const q=$('ara').value.trim().toLocaleLowerCase('tr-TR');
+  const uyar=u=>!q||u.gtin.includes(q)||(u.ad||'').toLocaleLowerCase('tr-TR').includes(q);
+  const liste=$('liste');liste.textContent='';
+  const bos=m=>liste.append(el('div','empty',m));
+  if(!durum.urunler.length){bos('Henüz okutulan ürün yok.');return}
+
+  if(gorunum==='kisi'){
+    const gruplar=el('div','gruplar');
+    for(const [k,t] of kisiler){
+      if(kisiSec&&k!==kisiSec)continue;
+      const satirlar=t.urunler.filter(x=>uyar(x.u));if(!satirlar.length)continue;
+      const kutu=el('div','grup'),h=el('h3','',k);h.append(el('span','',`${t.cesit} çeşit · ${t.kutu} kutu`));
+      const tb=el('table'),th=el('thead');th.innerHTML='<tr><th>İLAÇ</th><th>BARKOD</th><th class="s">ADET</th></tr>';
+      const gv=el('tbody');
+      for(const {u,adet} of satirlar){const tr=el('tr');tr.append(el('td',u.ad?'':'isimsiz',adOf(u)),el('td','mono',ean(u.gtin)),el('td','s',adet));gv.append(tr)}
+      tb.append(th,gv);kutu.append(h,tb);gruplar.append(kutu)}
+    if(gruplar.childElementCount)liste.append(gruplar);else bos('Aramaya uyan ilaç yok.');
+    return;
+  }
+  // Ürün bazında: satırlar ilaç, sütunlar kişiler
+  const kisiAdlari=kisiSec?[kisiSec]:[...kisiler.keys()];
+  const urunler=durum.urunler.filter(u=>uyar(u)&&(!kisiSec||u.kisiler[kisiSec]))
+    .sort((a,b)=>adOf(a).localeCompare(adOf(b),'tr'));
+  if(!urunler.length){bos('Aramaya uyan ilaç yok.');return}
+  const sar=el('div','tablo'),tb=el('table','matris'),th=el('thead'),hr=el('tr');
+  hr.append(el('th','','İLAÇ'),el('th','','BARKOD'),el('th','s','TOPLAM'));
+  kisiAdlari.forEach(k=>hr.append(el('th','s',k.toLocaleUpperCase('tr-TR'))));th.append(hr);
+  const gv=el('tbody');
+  for(const u of urunler){const tr=el('tr');
+    tr.append(el('td',u.ad?'':'isimsiz',adOf(u)),el('td','mono',ean(u.gtin)));
+    const t=el('td','s');t.append(el('b','',u.adet));tr.append(t);
+    kisiAdlari.forEach(k=>{const n=u.kisiler[k]||0;tr.append(el('td','s'+(n?'':' sifir'),n||'·'))});
+    gv.append(tr)}
+  tb.append(th,gv);sar.append(tb);liste.append(sar);
+}
+function gecmisCiz(){
+  const g=$('gecmisGovde');g.textContent='';
+  for(const s of durum.gecmis){const tr=el('tr');
+    tr.append(el('td','','#'+s.id),el('td','',fmtZaman(s.baslangic)),el('td',s.bitis?'':'bos',s.bitis?fmtZaman(s.bitis):'açık'),el('td','s',s.kutu));
+    const td=el('td','s'),t=el('button','','TXT'),c=el('button','','CSV');
+    t.type=c.type='button';t.onclick=()=>sayimIndir(s,'txt',$('gsOpt').checked);c.onclick=()=>sayimIndir(s,'csv');
+    td.append(t,' ',c);tr.append(td);g.append(tr)}
+  if(!durum.gecmis.length){const tr=el('tr'),td=el('td','bos','Henüz sayım yok.');td.colSpan=5;tr.append(td);g.append(tr)}
+}
+
+/* Kişi listesi: Not Defteri'nde düzgün okunsun diye sabit genişlikli sütunlar. */
+function kisiListesiMetni(){
+  const s=durum.sayim,kisiler=kisiTablosu(),satirlar=[];
+  const sag=(v,n)=>String(v).padStart(n),sol=(v,n)=>{v=String(v);return v.length>n?v.slice(0,n-1)+'…':v.padEnd(n)};
+  satirlar.push(`STOK SAYIM #${s.id} - KİŞİ BAZINDA LİSTE`,
+    `Başlangıç: ${fmtZaman(s.baslangic)}    Alındı: ${new Date().toLocaleString('tr-TR',{dateStyle:'medium',timeStyle:'short'})}`,'');
+  for(const [k,t] of kisiler){
+    if(kisiSec&&k!==kisiSec)continue;
+    satirlar.push(`${k.toLocaleUpperCase('tr-TR')}  (${t.cesit} çeşit, ${t.kutu} kutu)`,
+      `  ${sol('BARKOD',15)} ${sol('İLAÇ',42)} ${sag('ADET',5)}`);
+    for(const {u,adet} of t.urunler)satirlar.push(`  ${sol(ean(u.gtin),15)} ${sol(adOf(u),42)} ${sag(adet,5)}`);
+    satirlar.push('');
+  }
+  if(!kisiSec)satirlar.push(`TOPLAM: ${durum.urunler.length} çeşit, ${durum.urunler.reduce((t,u)=>t+u.adet,0)} kutu`);
+  return '﻿'+satirlar.join('\r\n')+'\r\n';
+}
+
+/* ---------- düğmeler ---------- */
+$('txtBtn').onclick=()=>{if(durum.sayim)sayimIndir(durum.sayim,'txt',$('gsOpt').checked)};
+$('csvBtn').onclick=()=>{if(durum.sayim)sayimIndir(durum.sayim,'csv')};
+$('kisiTxtBtn').onclick=()=>{const s=durum.sayim;if(!s)return;
+  if(!durum.urunler.length){toast('Henüz okutulan ürün yok');return}
+  const ek=kisiSec?kisiSec.toLocaleLowerCase('tr-TR').replace(/[^\p{L}\p{N}]+/gu,'-'):'kisiler';
+  indirDosya(`sayim-${sayimNo(s)}-${dosyaTarih(s)}-${ek}.txt`,kisiListesiMetni(),'text/plain;charset=utf-8');
+  toast(kisiSec?`${kisiSec} listesi indirildi`:'Kişi listesi indirildi')};
+document.querySelectorAll('.sekme button').forEach(b=>b.onclick=()=>{gorunum=b.dataset.gorunum;lsSet('masa-gorunum',gorunum);ciz()});
+$('ara').addEventListener('input',ciz);
+$('bagBtn').onclick=()=>{
+  const bag=kurulumBaglantisi(),kutu=$('bagKod');kutu.textContent='';
+  try{kutu.append(new ZXing.BrowserQRCodeSvgWriter().write(bag,300,300))}catch(e){kutu.textContent='Karekod çizilemedi; bağlantıyı kopyalayın.'}
+  $('bagIn').value=bag;$('bagBox').hidden=false};
+$('bagKapat').onclick=()=>{$('bagBox').hidden=true;$('bagKod').textContent=''};
+$('bagKopya').onclick=()=>{const t=$('bagIn').value;
+  (navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(()=>toast('Bağlantı kopyalandı'),()=>{$('bagIn').select();toast('Bağlantı seçildi; kopyalayın')})};
+$('resetBtn').onclick=()=>{$('resetConfirm').hidden=false};
+$('resetNo').onclick=()=>{$('resetConfirm').hidden=true};
+$('resetYes').onclick=async()=>{
+  try{const v=await apiPost('yeni_sayim');$('resetConfirm').hidden=true;kisiSec='';
+    toast(`Sayım #${v.kapanan} kapandı, #${v.sayim_id} başladı`);durumCek()}
+  catch(e){toast(e.ag?'Bağlantı yok; yeni sayım başlatılamadı':e.message)}};
+
+/* ---------- ? ipuçları ---------- */
+const SORU='<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M11 18h2v-2h-2v2zm1-16C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm0-14c-2.21 0-4 1.79-4 4h2c0-1.1.9-2 2-2s2 .9 2 2c0 2-3 1.75-3 5h2c0-2.25 3-2.5 3-5 0-2.21-1.79-4-4-4z"/></svg>';
+document.querySelectorAll('.ipucu').forEach(e=>{e.innerHTML=SORU;const b=el('span','balon',e.dataset.ipucu);e.append(b);e.setAttribute('aria-label',e.dataset.ipucu)});
+
+kurulumCiz();baglantiCiz();ciz();durumCek();
+})();
+</script>
+</body></html>
