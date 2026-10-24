@@ -88,6 +88,10 @@ tr:last-child td{border-bottom:0}
 .listhead{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 .listhead input{flex:1 1 220px}
 .empty{padding:28px 16px;text-align:center;color:var(--muted)}
+td.islem{width:1%;white-space:nowrap;text-align:right;padding:2px 6px;vertical-align:middle}
+.sil{min-height:30px;padding:3px 10px;font-size:.8rem;color:var(--muted-2);background:transparent;border-color:transparent}
+.sil:hover{color:var(--bad);border-color:var(--bad-soft);background:var(--bad-soft)}
+.sil.onay,.sil.onay:hover{background:var(--bad);border-color:var(--bad);color:#fff}
 .confirm{background:var(--bad-soft);color:var(--bad);border-radius:10px;padding:10px 12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:space-between;font-size:.9rem;margin:0}
 .bagbox{display:flex;gap:16px;align-items:center;flex-wrap:wrap}
 .bagbox svg{width:220px;height:220px;background:#fff;border:1px solid var(--line);border-radius:10px;padding:6px}
@@ -171,6 +175,12 @@ tr:last-child td{border-bottom:0}
             <button type="button" data-gorunum="urun" aria-pressed="false">Ürün bazında</button>
           </div>
           <input id="ara" type="search" placeholder="İlaç adı veya barkod ara" aria-label="Ara">
+          <button type="button" id="temizleBtn" class="danger" hidden>Listeyi temizle</button>
+          <span class="ipucu sol" tabindex="0" data-ipucu="Satırdaki Sil: o ilacın kutularını siler (kişi bazında görünümde yalnız o kişinin). Listeyi temizle: açık sayımdaki bütün kutuları siler; solda bir kişi seçiliyse yalnız onunkileri. İki kez tıklayınca silinir, geri alınamaz."></span>
+        </div>
+        <div class="confirm" id="temizleOnay" hidden>
+          <span id="temizleMetin"></span>
+          <span class="row"><button type="button" id="temizleHayir">Vazgeç</button><button type="button" id="temizleEvet" class="primary">Evet, sil</button></span>
         </div>
         <div id="liste"></div>
       </section>
@@ -291,6 +301,8 @@ function listeCiz(){
   $('stCesit').textContent=durum.urunler.length;$('stKutu').textContent=kutu;$('stKisi').textContent=kisiler.size;
   $('sayimSatir').textContent=s?`Sayım #${s.id} · başlangıç ${fmtZaman(s.baslangic)}`:'Sayım masası';
   $('kisiTxtBtn').textContent=kisiSec?`${kisiSec} listesi (TXT)`:'Kişi listesi (TXT)';
+  $('temizleBtn').textContent=kisiSec?`Okumalarını temizle (${kisiSec})`:'Listeyi temizle';
+  $('temizleBtn').hidden=!durum.urunler.length;
 
   const g=$('kisiGovde');g.textContent='';
   const satir=(k,ad,cesit,n)=>{const tr=el('tr',kisiSec===k?'secili':'');tr.tabIndex=0;
@@ -312,9 +324,11 @@ function listeCiz(){
       if(kisiSec&&k!==kisiSec)continue;
       const satirlar=t.urunler.filter(x=>uyar(x.u));if(!satirlar.length)continue;
       const kutu=el('div','grup'),h=el('h3','',k);h.append(el('span','',`${t.cesit} çeşit · ${t.kutu} kutu`));
-      const tb=el('table'),th=el('thead');th.innerHTML='<tr><th>İLAÇ</th><th>BARKOD</th><th class="s">ADET</th></tr>';
+      const tb=el('table'),th=el('thead');th.innerHTML='<tr><th>İLAÇ</th><th>BARKOD</th><th class="s">ADET</th><th></th></tr>';
       const gv=el('tbody');
-      for(const {u,adet} of satirlar){const tr=el('tr');tr.append(el('td',u.ad?'':'isimsiz',adOf(u)),el('td','mono',ean(u.gtin)),el('td','s',adet));gv.append(tr)}
+      for(const {u,adet} of satirlar){const tr=el('tr');
+        tr.append(el('td',u.ad?'':'isimsiz',adOf(u)),el('td','mono',ean(u.gtin)),el('td','s',adet),silHucresi({gtin:u.gtin,personel:k},`${adOf(u)} (${k})`));
+        gv.append(tr)}
       tb.append(th,gv);kutu.append(h,tb);gruplar.append(kutu)}
     if(gruplar.childElementCount)liste.append(gruplar);else bos('Aramaya uyan ilaç yok.');
     return;
@@ -326,12 +340,13 @@ function listeCiz(){
   if(!urunler.length){bos('Aramaya uyan ilaç yok.');return}
   const sar=el('div','tablo'),tb=el('table','matris'),th=el('thead'),hr=el('tr');
   hr.append(el('th','','İLAÇ'),el('th','','BARKOD'),el('th','s','TOPLAM'));
-  kisiAdlari.forEach(k=>hr.append(el('th','s',k.toLocaleUpperCase('tr-TR'))));th.append(hr);
+  kisiAdlari.forEach(k=>hr.append(el('th','s',k.toLocaleUpperCase('tr-TR'))));hr.append(el('th'));th.append(hr);
   const gv=el('tbody');
   for(const u of urunler){const tr=el('tr');
     tr.append(el('td',u.ad?'':'isimsiz',adOf(u)),el('td','mono',ean(u.gtin)));
     const t=el('td','s');t.append(el('b','',u.adet));tr.append(t);
     kisiAdlari.forEach(k=>{const n=u.kisiler[k]||0;tr.append(el('td','s'+(n?'':' sifir'),n||'·'))});
+    tr.append(kisiSec?silHucresi({gtin:u.gtin,personel:kisiSec},`${adOf(u)} (${kisiSec})`):silHucresi({gtin:u.gtin},adOf(u)));
     gv.append(tr)}
   tb.append(th,gv);sar.append(tb);liste.append(sar);
 }
@@ -344,6 +359,33 @@ function gecmisCiz(){
     td.append(t,' ',c);tr.append(td);g.append(tr)}
   if(!durum.gecmis.length){const tr=el('tr'),td=el('td','bos','Henüz sayım yok.');td.colSpan=5;tr.append(td);g.append(tr)}
 }
+
+/* ---------- silme (Kod.gs temizle_) ---------- */
+const hataMetni=(e,ne)=>e.ag?`Bağlantı yok; ${ne}`:e.message==='bilinmeyen işlem'?'Google\'daki kod eski: Kod.gs güncellenmeli':e.message;
+async function temizle(g,ne){
+  try{const v=await apiPost('temizle',{...g,sayim_id:durum.sayim.id});
+    toast(v.silinen?`${ne}: ${v.silinen} kutu silindi`:'Silinecek kutu kalmamış');durumCek()}
+  catch(e){toast(hataMetni(e,'silinemedi'))}
+}
+// Satır düğmesi: ilk tıklamada "Silinsin mi?" olur, 4 sn içinde ikinci tıklamada siler.
+function silHucresi(g,ne){
+  const td=el('td','islem'),b=el('button','sil','Sil');b.type='button';b.title=ne+' — sil';let t;
+  b.onclick=async()=>{
+    if(!b.classList.contains('onay')){b.classList.add('onay');b.textContent='Silinsin mi?';
+      t=setTimeout(()=>{b.classList.remove('onay');b.textContent='Sil'},4000);return}
+    clearTimeout(t);b.disabled=true;b.textContent='Siliniyor…';await temizle(g,ne)};
+  td.append(b);return td;
+}
+let bekleyen=null;
+$('temizleBtn').onclick=()=>{
+  const kutu=kisiSec?durum.urunler.reduce((t,u)=>t+(u.kisiler[kisiSec]||0),0):durum.urunler.reduce((t,u)=>t+u.adet,0);
+  bekleyen=kisiSec?{g:{personel:kisiSec},ne:kisiSec}:{g:{hepsi:true},ne:'Liste'};
+  $('temizleMetin').textContent=kisiSec?`${kisiSec} adlı kişinin açık sayımdaki ${kutu} kutusu silinsin mi? Geri alınamaz.`
+    :`Açık sayımdaki ${kutu} kutunun hepsi silinsin mi? Geri alınamaz; sayım numarası değişmez.`;
+  $('temizleOnay').hidden=false};
+$('temizleHayir').onclick=()=>{$('temizleOnay').hidden=true;bekleyen=null};
+$('temizleEvet').onclick=async()=>{if(!bekleyen)return;const b=bekleyen;bekleyen=null;
+  $('temizleEvet').disabled=true;await temizle(b.g,b.ne);$('temizleEvet').disabled=false;$('temizleOnay').hidden=true};
 
 /* Kişi listesi: Not Defteri'nde düzgün okunsun diye sabit genişlikli sütunlar. */
 function kisiListesiMetni(){
