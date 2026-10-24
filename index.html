@@ -1111,21 +1111,29 @@ function drawMarks(v){
   for(const m of marks){ctx.lineWidth=Math.max(4,ov.width/180);ctx.strokeStyle=col[m.s]||'#fff';ctx.beginPath();ctx.arc(m.x,m.y,Math.max(24,m.r*1.2),0,Math.PI*2);ctx.stroke()}
 }
 /* Karekodsuz bir kodu (barkod / QR etiket) panelle sormadan önce kısa süre beklenir: aynı
-   kutunun karekodu bu arada okunursa barkod sayılmaz (karekodlu kutularda ikisi birden var). */
-const BARKOD_BEKLE=900,ilkGorus=new Map();
+   kutunun karekodu bu arada okunursa barkod sayılmaz (karekodlu kutularda ikisi birden var).
+   Aynı karede görünen aynı içerikli etiketler (farklı yerde) sayılır; bekleme boyunca en çok
+   görülen sayı paneldeki adet olur (10 kutu birlikte kadraja alınınca 10). */
+const BARKOD_BEKLE=900,ilkGorus=new Map(),etiketSayisi=new Map();
 function handleFound(found){
   const now=Date.now();
   const okunan=found.map(f=>({f,p:parseCode(f.text)}));
   okunan.forEach(x=>{if(x.p&&x.p.serial)dmGoruldu.set(x.p.gtin,now)});
+  const karede=new Map();
+  for(const {f,p} of okunan)if(p&&!p.serial){const l=karede.get(f.text)||[];
+    if(!l.some(o=>Math.hypot(o.x-f.x,o.y-f.y)<Math.max(o.r,f.r)*1.5))l.push(f);karede.set(f.text,l)}
   for(const {f,p} of okunan){
     const prev=seen.get(f.text);seen.set(f.text,now);
     const yeni=!prev||now-prev>2000;   // new sighting (or came back into view after 2 s)
     if(p&&!p.serial){
-      if(yeni){ilkGorus.set(f.text,now);statusOf.set(f.text,'bekliyor')}
+      const n=karede.get(f.text).length;
+      if(yeni){ilkGorus.set(f.text,now);statusOf.set(f.text,'bekliyor');etiketSayisi.set(f.text,n)}
+      else etiketSayisi.set(f.text,Math.max(n,etiketSayisi.get(f.text)||1));
       if(karekodluMu(p.gtin))statusOf.set(f.text,'gec');
       else if(statusOf.get(f.text)==='bekliyor'&&now-(ilkGorus.get(f.text)||now)>=BARKOD_BEKLE){
-        statusOf.set(f.text,'sor');miadAdetSor(p,'kamera');
-        $('liveLast').textContent=(nameOf(p.gtin)||ean(p.gtin))+' · miad ve adet'}
+        const adet=etiketSayisi.get(f.text)||1;
+        statusOf.set(f.text,'sor');miadAdetSor(p,'kamera',adet);
+        $('liveLast').textContent=(nameOf(p.gtin)||ean(p.gtin))+(adet>1?` · ${adet} kutu`:'')+' · miad ve adet'}
     }
     else if(yeni){
       if(!p){statusOf.set(f.text,'bad');beep(false);$('liveLast').textContent='Tanınmayan kod'}
