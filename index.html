@@ -1199,9 +1199,10 @@ async function showTXT(){
   $('txtOut').value=t;
   const satirlar=t?t.split('\r\n'):[];
   $('txtInfo').textContent=`Sayım #${durum.sayim.id} · ${satirlar.length} satır`;
-  const duz=satirlar.filter(l=>l.length<=13).length;
-  $('txtNote').textContent=!satirlar.length?'Listede henüz okutulmuş kutu yok.'
-    :duz?`${duz} satır karekodsuz okunduğu için yalnızca barkod olarak yazıldı (her kutu bir satır).`:'';
+  // Karekodsuz kutular (barkod, QR etiket) bu listede yok: Sayım Masası'ndan ayrı dosya olarak alınır.
+  const kk=durum.urunler.reduce((t,u)=>t+u.adet-u.seri,0);
+  $('txtNote').textContent=(!satirlar.length?(kk?'Karekodlu kutu yok. ':'Listede henüz okutulmuş kutu yok.'):'')
+    +(kk?`${kk} karekodsuz kutu bu listede yok; Sayım Masası'ndan ayrı alınır.`:'');
 }
 $('txtBtn').onclick=async()=>{await showTXT();$('txtBox').scrollIntoView({behavior:'smooth',block:'nearest'})};
 $('gsOpt').onchange=showTXT;

@@ -137,10 +137,12 @@ td.islem{width:1%;white-space:nowrap;text-align:right;padding:2px 6px;vertical-a
     </section>
 
     <section class="panel" aria-label="Dışa aktarma">
-      <div class="label">TXT AL<span class="ipucu" tabindex="0" data-ipucu="Karekod listesi: açık sayımda okutulan her kutu bir satır (Tria'ya aktarılacak dosya); karekodsuz ürünler barkod olarak yazılır. Kişi listesi: kim hangi ilaçtan kaç kutu saydı; solda bir kişi seçiliyse yalnız onunki. Dosyalar İndirilenler klasörüne iner."></span></div>
+      <div class="label">TXT / EXCEL AL<span class="ipucu" tabindex="0" data-ipucu="Karekod listesi: açık sayımdaki karekodlu kutular, her kutu bir satır (Tria'ya aktarılacak dosya). Barkodlu ürünler: EAN-13 barkodla sayılan kutular, her kutu bir satır. QR etiketli: eczane etiketli ürünler Excel'de; ürün adı, aynı barkodun her miadı ayrı satırda toplam adet. Kişi listesi: kim hangi ilaçtan kaç kutu saydı; solda bir kişi seçiliyse yalnız onunki. Dosyalar İndirilenler klasörüne iner."></span></div>
       <div class="row">
         <button type="button" class="primary" id="txtBtn">Karekod listesi (TXT)</button>
         <label class="secim"><input type="checkbox" id="gsOpt">GS ayırıcı<span class="ipucu" tabindex="0" data-ipucu="Tria karekodları GS (grup ayırıcı) karakteriyle istiyorsa işaretleyin. Bilmiyorsanız işaretlemeyin."></span></label>
+        <button type="button" id="barkodTxtBtn">Barkodlu ürünler (TXT)</button>
+        <button type="button" id="qrXlsxBtn">QR etiketli ürünler (Excel)</button>
         <button type="button" id="kisiTxtBtn">Kişi listesi (TXT)</button>
         <button type="button" id="csvBtn">Ürün listesi (CSV)</button>
         <span style="flex:1 1 auto"></span>
@@ -201,6 +203,7 @@ td.islem{width:1%;white-space:nowrap;text-align:right;padding:2px 6px;vertical-a
 <div class="toast" id="toast" role="status" hidden></div>
 
 <script src="vendor/zxing-library.min.js"></script>
+<script src="liste.js"></script>
 <script>
 (function(){
 const $=id=>document.getElementById(id);
@@ -279,10 +282,21 @@ function indirDosya(ad,metin,tur){
 }
 async function sayimIndir(s,tur,gs){
   try{const t=await apiGet(tur,{sayim:s.id,gs:gs?'1':'0'},true);
-    if(tur==='txt'&&!t){toast(`Sayım #${s.id}'de okutulmuş kutu yok`);return}
+    if(tur==='txt'&&!t){toast(`Sayım #${s.id}'de karekodlu kutu yok`);return}
     indirDosya(`sayim-${sayimNo(s)}-${dosyaTarih(s)}.${tur}`,t,tur==='txt'?'text/plain;charset=utf-8':'text/csv;charset=utf-8');
     toast(tur==='txt'?`Karekod listesi indirildi (${t.split('\r\n').length} satır)`:'Ürün listesi indirildi')}
   catch(e){toast(e.ag?'Bağlantı yok; indirilemedi':e.message)}
+}
+
+/* Karekodsuz kutular (liste.js): barkodlu -> TXT (her kutu bir satır), QR etiketli -> Excel. */
+async function karekodsuzIndir(s,tur){
+  try{const {satirlar}=await apiGet('karekodsuz',{sayim:s.id});
+    const ad=`sayim-${sayimNo(s)}-${dosyaTarih(s)}`;
+    if(tur==='barkod'){const t=barkodTxt(satirlar);if(!t){toast(`Sayım #${s.id}'de barkodla sayılmış ürün yok`);return}
+      indirDosya(ad+'-barkod.txt',t,'text/plain;charset=utf-8');toast(`Barkodlu ürünler indirildi (${t.split('\r\n').length} kutu)`)}
+    else{const n=qrSatirlari(satirlar).length;if(!n){toast(`Sayım #${s.id}'de QR etiketli ürün yok`);return}
+      indirDosya(ad+'-qr.xlsx',qrXlsx(satirlar),'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');toast(`QR etiketli ürünler indirildi (${n} satır)`)}}
+  catch(e){toast(e.ag?'Bağlantı yok; indirilemedi':e.message==='bilinmeyen işlem'?'Google\'daki kod eski: Kod.gs güncellenmeli':e.message)}
 }
 
 /* ---------- kişi × ilaç ---------- */
@@ -359,9 +373,10 @@ function gecmisCiz(){
   const g=$('gecmisGovde');g.textContent='';
   for(const s of durum.gecmis){const tr=el('tr');
     tr.append(el('td','','#'+s.id),el('td','',fmtZaman(s.baslangic)),el('td',s.bitis?'':'bos',s.bitis?fmtZaman(s.bitis):'açık'),el('td','s',s.kutu));
-    const td=el('td','s'),t=el('button','','TXT'),c=el('button','','CSV');
-    t.type=c.type='button';t.onclick=()=>sayimIndir(s,'txt',$('gsOpt').checked);c.onclick=()=>sayimIndir(s,'csv');
-    td.append(t,' ',c);tr.append(td);g.append(tr)}
+    const td=el('td','s'),t=el('button','','TXT'),b=el('button','','Barkod'),x=el('button','','QR Excel'),c=el('button','','CSV');
+    t.type=b.type=x.type=c.type='button';t.onclick=()=>sayimIndir(s,'txt',$('gsOpt').checked);c.onclick=()=>sayimIndir(s,'csv');
+    b.onclick=()=>karekodsuzIndir(s,'barkod');x.onclick=()=>karekodsuzIndir(s,'qr');
+    td.append(t,' ',b,' ',x,' ',c);tr.append(td);g.append(tr)}
   if(!durum.gecmis.length){const tr=el('tr'),td=el('td','bos','Henüz sayım yok.');td.colSpan=5;tr.append(td);g.append(tr)}
 }
 
@@ -412,6 +427,8 @@ function kisiListesiMetni(){
 /* ---------- düğmeler ---------- */
 $('txtBtn').onclick=()=>{if(durum.sayim)sayimIndir(durum.sayim,'txt',$('gsOpt').checked)};
 $('csvBtn').onclick=()=>{if(durum.sayim)sayimIndir(durum.sayim,'csv')};
+$('barkodTxtBtn').onclick=()=>{if(durum.sayim)karekodsuzIndir(durum.sayim,'barkod')};
+$('qrXlsxBtn').onclick=()=>{if(durum.sayim)karekodsuzIndir(durum.sayim,'qr')};
 $('kisiTxtBtn').onclick=()=>{const s=durum.sayim;if(!s)return;
   if(!durum.urunler.length){toast('Henüz okutulan ürün yok');return}
   const ek=kisiSec?kisiSec.toLocaleLowerCase('tr-TR').replace(/[^\p{L}\p{N}]+/gu,'-'):'kisiler';
