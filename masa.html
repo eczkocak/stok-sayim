@@ -105,6 +105,7 @@ tr.ayrinti>td{background:var(--sunk);padding:10px 12px 12px}
 .gruptablo{width:auto;min-width:min(560px,100%);background:var(--surface);border:1px solid var(--line);border-radius:8px}
 .gruptablo td{vertical-align:middle}
 .kucuk{min-height:30px;padding:3px 10px;font-size:.82rem}
+.adetIn{width:64px;min-height:30px;padding:3px 8px;text-align:right;font:inherit;font-variant-numeric:tabular-nums;border:1px solid var(--line);border-radius:8px}
 .miadForm{display:inline-flex;gap:4px;align-items:center}
 .miadForm input{width:84px;min-height:30px;padding:3px 8px}
 .not{margin:6px 0 0;font-size:.82rem;color:var(--muted)}
@@ -196,7 +197,7 @@ tr.ayrinti>td{background:var(--sunk);padding:10px 12px 12px}
           </div>
           <input id="ara" type="search" placeholder="İlaç adı veya barkod ara" aria-label="Ara">
           <button type="button" id="temizleBtn" class="danger" hidden>Listeyi temizle</button>
-          <span class="ipucu sol" tabindex="0" data-ipucu="Ürüne tıklayın: parti ve miad grupları açılır; − bir kutu siler, + bir kutu ekler (karekodsuz), Miad grubun miadını değiştirir, Sil grubu siler. Solda bir kişi seçiliyse düzeltmeler yalnız onun kutularına uygulanır. Satırdaki Sil: o ilacın kutularını siler. Listeyi temizle: gösterilen sayımdaki bütün kutuları siler. Silmeler iki kez tıklayınca olur, geri alınamaz."></span>
+          <span class="ipucu sol" tabindex="0" data-ipucu="Ürüne tıklayın: parti ve miad grupları açılır; her miadın adedini kutuya yazıp Enter ile değiştirebilirsiniz; − bir kutu siler, + bir kutu ekler (karekodsuz), Miad grubun miadını değiştirir, Sil grubu siler. Solda bir kişi seçiliyse düzeltmeler yalnız onun kutularına uygulanır. Satırdaki Sil: o ilacın kutularını siler. Listeyi temizle: gösterilen sayımdaki bütün kutuları siler. Silmeler iki kez tıklayınca olur, geri alınamaz."></span>
         </div>
         <div class="confirm" id="temizleOnay" hidden>
           <span id="temizleMetin"></span>
@@ -268,13 +269,15 @@ const apiGet=(islem,p={},metin=false)=>istek(ayar.url+'?'+new URLSearchParams({i
 const apiPost=(islem,g={})=>istek(ayar.url,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({...g,islem,k:ayar.k})});
 
 let durum={rev:'',sayim:null,urunler:[],gecmis:[]};
-let cekiliyor=false;
+let cekiliyor=false,cizBekliyor=false;
+document.addEventListener('focusout',()=>{if(cizBekliyor){cizBekliyor=false;setTimeout(ciz,0)}});
 async function durumCek(){
   if(!ayar.url||cekiliyor)return;
   cekiliyor=true;
   try{const v=await apiGet('durum',{rev:durum.rev});
     $('guncel').textContent='Güncellendi '+new Date().toLocaleTimeString('tr-TR');
-    if(v.degisti){durum=v;ciz()}}
+    // Adet/miad kutusuna yazılırken liste yeniden çizilmez (yazılan kaybolmasın); kutudan çıkınca çizilir
+    if(v.degisti){durum=v;if(document.activeElement&&document.activeElement.matches('.adetIn,.miadForm input'))cizBekliyor=true;else ciz()}}
   catch(e){if(!e.ag)toast(e.message)}
   finally{cekiliyor=false}
 }
@@ -419,7 +422,16 @@ function ayrinti(u){
   for(const p of gruplar){
     const tr=el('tr'),karekodlu=p.seri>0,g={gtin:u.gtin,parti:p.parti,skt:p.skt||'',...(k?{personel:k}:{})};
     const ne=`${adOf(u)} ${ayYil(p.skt)}`;
-    tr.append(el('td','mono',p.parti),el('td','',ayYil(p.skt)),el('td','s',p.n));
+    // Adet doğrudan yazılır (Enter ya da kutudan çıkınca): fazlası sondan silinir, eksiği eklenir
+    const at=el('td','s'),ai=el('input','adetIn');ai.inputMode='numeric';ai.value=p.n;ai.setAttribute('aria-label',`${ne} adet`);
+    ai.title=karekodlu?'Karekodlu kutu yalnız azaltılabilir':'Adeti yazın, Enter';
+    const uygula=async()=>{const h=Number(ai.value);if(ai.value.trim()===''||h===p.n){ai.value=p.n;return}
+      if(!(Number.isInteger(h)&&h>=0&&h<=500)){toast('Adet 0 ile 500 arası olmalı');ai.value=p.n;return}
+      if(karekodlu&&h>p.n){toast('Karekodlu kutu elle eklenemez; yalnız azaltılabilir');ai.value=p.n;return}
+      ai.disabled=true;await duzelt(g,'adet',ne,{hedef:h})};
+    ai.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();ai.blur()}else if(e.key==='Escape'){ai.value=p.n;ai.blur()}};
+    ai.onchange=uygula;at.append(ai);
+    tr.append(el('td','mono',p.parti),el('td','',ayYil(p.skt)),at);
     const islem=el('td','islem'),d=(m,baslik,f)=>{const b=el('button','kucuk',m);b.type='button';b.title=baslik;b.onclick=async()=>{b.disabled=true;await f();b.disabled=false};return b};
     islem.append(d('−','Bir kutu sil',()=>duzelt(g,'eksi',ne)));
     if(!karekodlu){islem.append(' ',d('+','Bir kutu ekle',()=>duzelt(g,'arti',ne)),' ');
@@ -429,7 +441,7 @@ function ayrinti(u){
         f.append(inp,k2,v2);mb.replaceWith(f);inp.focus();inp.select();
         v2.onclick=()=>f.replaceWith(mb);
         f.onsubmit=async e=>{e.preventDefault();const y=miadOku(inp.value);if(!y){toast('Miad ay/yıl olmalı: 09/28');inp.focus();return}
-          k2.disabled=true;await duzelt(g,'miad',ne,y)}};
+          k2.disabled=true;await duzelt(g,'miad',ne,{yeni:y})}};
       islem.append(mb,' ')}
     islem.append(onayliSil(ne,()=>duzelt(g,'sil',ne)));
     tr.append(islem);gv.append(tr)}
@@ -442,11 +454,12 @@ const xmlKac=v=>String(v).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt
 function miadOku(t){const m=String(t).trim().match(/^(\d{1,2})\s*[\/.\-]?\s*(\d{2}|\d{4})$/);if(!m)return null;
   const ay=+m[1],yil=m[2].length===4?+m[2]%100:+m[2];if(ay<1||ay>12)return null;
   return String(yil).padStart(2,'0')+String(ay).padStart(2,'0')+'00'}
-async function duzelt(g,eylem,ne,yeni){
-  try{const v=await apiPost('duzelt',{...g,eylem,...(yeni?{yeni}:{}),sayim_id:gorunen().sayim.id});
-    toast(!v.degisen?'Değişecek kutu kalmamış':{eksi:`${ne}: 1 kutu silindi`,arti:`${ne}: 1 kutu eklendi`,miad:`${ne}: ${v.degisen} kutunun miadı değişti`,sil:`${ne}: ${v.degisen} kutu silindi`}[eylem]);
+async function duzelt(g,eylem,ne,ek={}){
+  try{const v=await apiPost('duzelt',{...g,eylem,...ek,sayim_id:gorunen().sayim.id});
+    toast(!v.degisen?'Değişecek kutu kalmamış':{eksi:`${ne}: 1 kutu silindi`,arti:`${ne}: 1 kutu eklendi`,adet:`${ne}: adet ${ek.hedef} oldu`,
+      miad:`${ne}: ${v.degisen} kutunun miadı değişti`,sil:`${ne}: ${v.degisen} kutu silindi`}[eylem]);
     durumCek();seciliYenile()}
-  catch(e){toast(hataMetni(e,'düzeltilemedi'))}
+  catch(e){toast(hataMetni(e,'düzeltilemedi'));ciz()}
 }
 function gecmisCiz(){
   const g=$('gecmisGovde');g.textContent='';

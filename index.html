@@ -97,6 +97,8 @@ input[type=text],input[type=search],select{font:inherit;border:1px solid var(--l
 .lots{width:100%;border-collapse:collapse;font-size:.82rem;font-variant-numeric:tabular-nums}
 .lots th{text-align:left;color:var(--muted-2);font-weight:700;font-size:.72rem;letter-spacing:.06em;padding:4px 6px 4px 0;border-bottom:1px solid var(--line)}
 .lots td{padding:4px 6px 4px 0;border-bottom:1px solid var(--line)}
+.lots td.grupbtn{white-space:nowrap;text-align:right}
+.lots td.grupbtn button{min-height:32px;width:34px;padding:0;margin-left:4px;font-size:1rem;border-radius:8px}
 .tablewrap{overflow-x:auto}
 .empty{padding:28px 16px;text-align:center;color:var(--muted)}
 .tools{display:flex;gap:8px;flex-wrap:wrap}
@@ -123,6 +125,8 @@ textarea{width:100%;min-height:140px;font-family:ui-monospace,Consolas,Menlo,mon
 .sheet-bas{display:flex;flex-direction:column;gap:4px}
 .sheet-bas b{font-size:1.05rem;overflow-wrap:anywhere}
 .ma-satir{display:flex;align-items:center;gap:10px}
+.ma-once{margin:0;padding:8px 10px;border-radius:10px;background:var(--sunk);font-size:.9rem;line-height:1.4}
+.ma-once b{font-variant-numeric:tabular-nums}
 .ma-et{flex:0 0 52px;font-size:13px;font-weight:750;letter-spacing:.07em;color:var(--accent)}
 #maMiad,#maAdet{font-size:1.35rem;text-align:center;min-height:54px;font-variant-numeric:tabular-nums}
 #maMiad{flex:1;min-width:0;letter-spacing:.06em}
@@ -319,6 +323,7 @@ body.kamerada{overflow:hidden}
 <div class="perde" id="maPerde" hidden></div>
 <section class="sheet" id="maSheet" hidden role="dialog" aria-label="Miad ve adet">
   <div class="sheet-bas"><b id="maAd">Ürün</b><span class="row" style="gap:6px"><span class="mono" id="maKod"></span><span class="chip ok" id="maEtiket" hidden>Etiketten</span><span class="chip" id="maSira" hidden></span></span></div>
+  <p class="ma-once" id="maOnce"></p>
   <div class="ma-satir"><span class="ma-et">MİAD</span><input id="maMiad" type="text" inputmode="numeric" placeholder="AA/YY" autocomplete="off" aria-label="Miad (ay/yıl)"></div>
   <div class="ma-satir"><span class="ma-et">ADET</span><div class="adet"><button type="button" id="maEksi" aria-label="Bir azalt">−</button><input id="maAdet" type="text" inputmode="numeric" value="1" autocomplete="off" aria-label="Adet"><button type="button" id="maArti" aria-label="Bir artır">+</button></div></div>
   <p class="confirm" id="maHata" hidden></p>
@@ -617,7 +622,12 @@ function render(){
     const plus=document.createElement('button');plus.type='button';plus.textContent='+';plus.setAttribute('aria-label','Bir artır');
     minus.disabled=plus.disabled=!ben.ad;
     minus.onclick=async()=>{try{await apiPost('sil',{gtin:it.gtin,sayim_id:durum.sayim&&durum.sayim.id});yerelUnut(null,it.gtin);durumCek()}catch(e){toast(e.message)}};
-    plus.onclick=async()=>{const [r]=await okumaEkle([{p:{gtin:it.gtin,raw:ean(it.gtin)},kaynak:'elle'}]);if(r.sonuc==='kuyruk')toast('Bağlantı yok; bağlanınca gönderilecek')};
+    // Karekodsuz üründe + miadıyla birlikte eklenir: tek miad varsa ona, birden çoksa ayrıntıdan seçilir.
+    // Yalnız karekodlu üründe (karekodu okunmayan kutu) eskisi gibi düz bir kutu eklenir.
+    plus.onclick=async()=>{const gr=it.partiler.filter(L=>!grupKarekodlu(L));
+      if(gr.length===1){plus.disabled=true;await grupDuzelt(it,gr[0],'arti');plus.disabled=false;return}
+      if(gr.length>1){openGtin=it.gtin;render();toast('Birden çok miad var: alttaki tablodan + ile ekleyin');return}
+      const [r]=await okumaEkle([{p:{gtin:it.gtin,raw:ean(it.gtin)},kaynak:'elle'}]);if(r.sonuc==='kuyruk')toast('Bağlantı yok; bağlanınca gönderilecek')};
     if(kisi)qty.append(val);else qty.append(minus,val,plus);
     el.append(stripe,main,qty);
     if(openGtin===it.gtin){
@@ -628,9 +638,15 @@ function render(){
       nr.onsubmit=async e=>{e.preventDefault();try{await apiPost('urun_adlari',{adlar:{[it.gtin]:ni.value.trim()}});toast('İsim kaydedildi');durumCek()}catch(err){toast(err.message)}};
       nr.append(ni,nb);d.append(nr);
       if(nl){const w=document.createElement('div');w.className='tablewrap';const t=document.createElement('table');t.className='lots';
-        t.innerHTML='<thead><tr><th>PARTİ (LOT)</th><th>SKT</th><th>ADET</th></tr></thead>';const tb=document.createElement('tbody');
+        t.innerHTML='<thead><tr><th>PARTİ (LOT)</th><th>SKT</th><th>ADET</th><th></th></tr></thead>';const tb=document.createElement('tbody');
         [...it.partiler].sort((a,b)=>(a.skt||'9').localeCompare(b.skt||'9')).forEach(L=>{const tr=document.createElement('tr');
-          [L.parti,L.skt?fmtExp(L.skt):'—',L.adet].forEach((v,i)=>{const td=document.createElement('td');td.textContent=v;if(i===0)td.className='mono';tr.append(td)});tb.append(tr)});
+          [L.parti,L.skt?fmtExp(L.skt):'—',L.adet].forEach((v,i)=>{const td=document.createElement('td');td.textContent=v;if(i===0)td.className='mono';tr.append(td)});
+          // Miad başına düzeltme: − son kutuyu siler, + (karekodsuz) aynı miadla bir kutu ekler
+          const td=document.createElement('td');td.className='grupbtn';
+          const dm=(m,etiket,eylem)=>{const b=document.createElement('button');b.type='button';b.textContent=m;b.setAttribute('aria-label',etiket);b.disabled=!ben.ad;
+            b.onclick=async()=>{b.disabled=true;await grupDuzelt(it,L,eylem);b.disabled=false};return b};
+          td.append(dm('−','Bu miaddan bir kutu sil','eksi'));if(!grupKarekodlu(L))td.append(dm('+','Bu miadla bir kutu ekle','arti'));
+          tr.append(td);tb.append(tr)});
         t.append(tb);w.append(t);d.append(w)}
       const info=document.createElement('p');info.className='hint';
       const kim=Object.entries(it.kisiler).map(([k,a])=>`${k} ${a}`).join(', ');
@@ -652,6 +668,15 @@ function kisilerCiz(items,boxes){
   dugme('','Herkes',boxes);
   [...top].sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0],'tr')).forEach(([k,n])=>dugme(k,k,n));
   return kisiSec;
+}
+// Grup (parti + miad): durum'daki seri sayısı yoksa (eski Google kodu) karekodlu sayılmaz.
+const grupKarekodlu=L=>(L.seri||0)>=L.adet&&L.adet>0&&L.seri!==undefined;
+async function grupDuzelt(it,L,eylem){
+  try{const v=await apiPost('duzelt',{gtin:it.gtin,parti:L.parti,skt:L.skt||'',eylem,sayim_id:durum.sayim&&durum.sayim.id,
+      cihaz:ben.cihaz,...(eylem==='arti'&&ben.ad?{personel:ben.ad}:{})});
+    if(eylem==='eksi')yerelUnut(null,it.gtin);
+    toast(v.degisen?`${it.ad||ean(it.gtin)} ${L.skt?fmtExp(L.skt):''}: ${eylem==='arti'?'+1':'−1'}`:'Değişecek kutu kalmamış');durumCek()}
+  catch(e){toast(e.ag?'Bağlantı yok; değiştirilemedi':e.message==='bilinmeyen işlem'?'Google\'daki kod eski: Kod.gs güncellenmeli':e.message)}
 }
 function gecmisCiz(){
   const g=$('gecmis');g.textContent='';
@@ -716,12 +741,25 @@ function siradakiniSor(){
   duraklat=true;const {p,kaynak}=sorulan;
   $('maAd').textContent=nameOf(p.gtin)||'İsimsiz ürün';$('maKod').textContent=ean(p.gtin);$('maEtiket').hidden=!p.etiket;
   $('maMiad').value=miadYaz(p.expRaw||lsGet('miad-'+p.gtin)||'');$('maAdet').value=String(sorulan.adet||1);
-  maHata('');maSiraCiz();$('maSheet').hidden=$('maPerde').hidden=false;
+  maHata('');maSiraCiz();maOnceCiz();$('maSheet').hidden=$('maPerde').hidden=false;
   // Klavye yalnız gerektiğinde açılsın (kamera görüntüsünü kapatmasın): miad boşsa ya da el okuyucuyla.
   if(!$('maMiad').value)$('maMiad').focus();
   else if(kaynak==='okuyucu'){$('maAdet').focus();$('maAdet').select()}
 }
 function maHata(m){$('maHata').textContent=m;$('maHata').hidden=!m}
+/* Bu ürünün bu sayımda daha önce sayılanı (bütün telefonlar): başka rafta okutulunca panel
+   önceki adedi gösterir, girilen adet üstüne eklenir. skt YYAAGG; miad ayı (YYYY-AA) karşılaştırılır. */
+function oncekiSayi(gtin,skt){const u=urunMap.get(gtin);if(!u)return {toplam:0,miad:0};
+  const ay=skt?'20'+skt.slice(0,2)+'-'+skt.slice(2,4):null;let miad=0;
+  for(const L of u.partiler)if(ay?(L.skt&&L.skt.slice(0,7)===ay):!L.skt)miad+=L.adet;
+  return {toplam:u.adet,miad}}
+function maOnceCiz(){if(!sorulan)return;
+  const m=miadOku($('maMiad').value),skt=m?(sorulan.p.expRaw&&$('maMiad').value===miadYaz(sorulan.p.expRaw)?sorulan.p.expRaw:m.skt):null;
+  const o=oncekiSayi(sorulan.p.gtin,skt),adet=Math.floor(Number($('maAdet').value))||0,e=$('maOnce');
+  if(!o.toplam){e.textContent='Bu ürün bu sayımda daha önce sayılmadı.';return}
+  const mt=skt?$('maMiad').value:'miadsız';
+  e.innerHTML=`Daha önce sayılan: <b>${o.miad}</b> kutu (${mt}) · üründe toplam <b>${o.toplam}</b>`+(adet?` → kaydedince bu miad <b>${o.miad+adet}</b>`:'');
+}
 async function maKaydet(){
   if(!sorulan)return;
   const m=miadOku($('maMiad').value),adet=Math.floor(Number($('maAdet').value));
@@ -731,7 +769,7 @@ async function maKaydet(){
   // Etiketteki tam gün değiştirilmediyse korunur (05/28 -> 280530)
   const skt=p0.expRaw&&$('maMiad').value===miadYaz(p0.expRaw)?p0.expRaw:m.skt;
   if(skt)lsSet('miad-'+p0.gtin,skt);
-  const p={...p0,serial:null,lot:null,expRaw:skt||undefined};
+  const p={...p0,serial:null,lot:null,expRaw:skt||undefined},once=oncekiSayi(p0.gtin,skt);
   siradakiniSor();
   const sonuc=await okumaEkle(Array.from({length:adet},()=>({p,kaynak})));
   const n=sonuc.filter(r=>r.sonuc==='eklendi'||r.sonuc==='kuyruk').length;
@@ -739,19 +777,19 @@ async function maKaydet(){
   const idler=new Set(sonuc.map(r=>r.istemci_id).filter(Boolean)),grup=geriAl.filter(g=>idler.has(g.istemci_id));
   if(grup.length>1){geriAl=geriAl.filter(g=>!idler.has(g.istemci_id));geriAl.push({grup})}
   const iso=skt&&parseYYMMDD(skt);
-  beep(n>0);toast(n?`${sonuc[0].ad||nameOf(p.gtin)||ean(p.gtin)} +${n}${iso?' · SKT '+fmtExp(iso):''}${sonuc.some(r=>r.sonuc==='kuyruk')?' · bağlantı yok, bekliyor':''}`:'Kaydedilemedi');
+  beep(n>0);toast(n?`${sonuc[0].ad||nameOf(p.gtin)||ean(p.gtin)} +${n}${iso?' · SKT '+fmtExp(iso):''}${once.miad?` · toplam ${once.miad+n}`:''}${sonuc.some(r=>r.sonuc==='kuyruk')?' · bağlantı yok, bekliyor':''}`:'Kaydedilemedi');
   if(kaynak==='kamera'){liveAdded+=n;kamSayacCiz()}
   render();
 }
 $('maKaydet').onclick=maKaydet;
 $('maVazgec').onclick=()=>siradakiniSor();
 $('maPerde').onclick=()=>siradakiniSor();
-$('maMiad').addEventListener('input',e=>{const d=e.target.value.replace(/\D/g,'').slice(0,6);e.target.value=d.length>2?d.slice(0,2)+'/'+d.slice(2):d;maHata('')});
+$('maMiad').addEventListener('input',e=>{const d=e.target.value.replace(/\D/g,'').slice(0,6);e.target.value=d.length>2?d.slice(0,2)+'/'+d.slice(2):d;maHata('');maOnceCiz()});
 $('maMiad').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();$('maAdet').focus();$('maAdet').select()}});
-$('maAdet').addEventListener('input',e=>{e.target.value=e.target.value.replace(/\D/g,'').slice(0,3);maHata('')});
+$('maAdet').addEventListener('input',e=>{e.target.value=e.target.value.replace(/\D/g,'').slice(0,3);maHata('');maOnceCiz()});
 $('maAdet').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();maKaydet()}});
-$('maEksi').onclick=()=>{$('maAdet').value=Math.max(1,(Number($('maAdet').value)||1)-1)};
-$('maArti').onclick=()=>{$('maAdet').value=Math.min(500,(Number($('maAdet').value)||0)+1)};
+$('maEksi').onclick=()=>{$('maAdet').value=Math.max(1,(Number($('maAdet').value)||1)-1);maOnceCiz()};
+$('maArti').onclick=()=>{$('maAdet').value=Math.min(500,(Number($('maAdet').value)||0)+1);maOnceCiz()};
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&sorulan)siradakiniSor()});
 
 /* ---------- manual / scanner input ---------- */
