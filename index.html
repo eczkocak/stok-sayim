@@ -127,6 +127,8 @@ textarea{width:100%;min-height:140px;font-family:ui-monospace,Consolas,Menlo,mon
 .ma-satir{display:flex;align-items:center;gap:10px}
 .ma-once{margin:0;padding:8px 10px;border-radius:10px;background:var(--sunk);font-size:.9rem;line-height:1.4}
 .ma-once b{font-variant-numeric:tabular-nums}
+.ma-once.uyari{background:var(--warn-soft);color:var(--warn);border:1.5px solid var(--warn);display:flex;flex-direction:column;gap:2px}
+.ma-once.uyari .ma-uyari{font-size:1rem}
 .ma-et{flex:0 0 52px;font-size:13px;font-weight:750;letter-spacing:.07em;color:var(--accent)}
 #maMiad,#maAdet{font-size:1.35rem;text-align:center;min-height:54px;font-variant-numeric:tabular-nums}
 #maMiad{flex:1;min-width:0;letter-spacing:.06em}
@@ -756,9 +758,13 @@ function oncekiSayi(gtin,skt){const u=urunMap.get(gtin);if(!u)return {toplam:0,m
 function maOnceCiz(){if(!sorulan)return;
   const m=miadOku($('maMiad').value),skt=m?(sorulan.p.expRaw&&$('maMiad').value===miadYaz(sorulan.p.expRaw)?sorulan.p.expRaw:m.skt):null;
   const o=oncekiSayi(sorulan.p.gtin,skt),adet=Math.floor(Number($('maAdet').value))||0,e=$('maOnce');
+  // Daha önce sayılmışsa uyarı: önceki adet gösterilir, "Ekle" yeni adedi üstüne ekler, "Vazgeç" eklemez
+  e.classList.toggle('uyari',!!o.toplam);$('maKaydet').textContent=o.toplam?'Ekle':'Kaydet';
   if(!o.toplam){e.textContent='Bu ürün bu sayımda daha önce sayılmadı.';return}
   const mt=skt?$('maMiad').value:'miadsız';
-  e.innerHTML=`Daha önce sayılan: <b>${o.miad}</b> kutu (${mt}) · üründe toplam <b>${o.toplam}</b>`+(adet?` → kaydedince bu miad <b>${o.miad+adet}</b>`:'');
+  e.innerHTML=`<b class="ma-uyari">⚠ Bu ürün daha önce sayıldı</b>`+
+    `<span>${mt}: <b>${o.miad}</b> kutu · üründe toplam <b>${o.toplam}</b> kutu</span>`+
+    `<span>Tekrar eklemek istiyor musunuz?${adet?` Eklenince bu miad <b>${o.miad+adet}</b> olur.`:''}</span>`;
 }
 async function maKaydet(){
   if(!sorulan)return;
