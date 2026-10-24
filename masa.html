@@ -213,7 +213,7 @@ function kurulumBaglantisi(){
   const m=ayar.url.match(/^https:\/\/script\.google\.com\/macros\/s\/([\w-]+)\/exec$/);
   return `${new URL('./',location.href).href}#u=${m?m[1]:encodeURIComponent(ayar.url)}&k=${ayar.k}`;
 }
-function kurulumCiz(){const k=!!ayar.url;$('kurulumYok').hidden=k;$('icerik').hidden=!k}
+function kurulumCiz(){const k=!!ayar.url;$('kurulumYok').hidden=k;$('icerik').hidden=!k;baglantiCiz()}
 $('kurForm').onsubmit=e=>{e.preventDefault();const a=kurulumCoz($('kurIn').value);
   if(!a){toast('Bağlantı tanınmadı; E-Tablodaki Kurulum!B4 bağlantısını yapıştırın');return}
   ayar.url=a.url;ayar.k=a.k;lsSet('url',a.url);lsSet('k',a.k);$('kurIn').value='';kurulumCiz();durumCek()};
@@ -221,7 +221,7 @@ $('kurForm').onsubmit=e=>{e.preventDefault();const a=kurulumCoz($('kurIn').value
 /* ---------- Google ---------- */
 let bagli=null;
 function baglantiCiz(){const c=$('baglanti');c.className='chip'+(bagli===false?' bad':'');
-  c.textContent=bagli===false?'Bağlantı yok':bagli?'Bağlı':'Bağlanıyor'}
+  c.textContent=!ayar.url?'Kurulum gerekli':bagli===false?'Bağlantı yok':bagli?'Bağlı':'Bağlanıyor'}
 async function istek(url,secenek,metin){
   const ac=new AbortController(),t=setTimeout(()=>ac.abort(),30000);let g;
   try{const r=await fetch(url,{...secenek,signal:ac.signal});if(!r.ok)throw 0;g=await r.text()}
