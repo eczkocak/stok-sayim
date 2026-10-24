@@ -598,8 +598,15 @@ function render(){
     const nm=document.createElement('div');const n=it.ad;nm.className='name'+(n?'':' unk');nm.textContent=n||'İsimsiz ürün';
     const meta=document.createElement('div');meta.className='meta';
     const code=document.createElement('span');code.className='mono';code.textContent=ean(it.gtin);meta.append(code);
-    if(me){const c=document.createElement('span');c.className='chip '+(st==='ok'?'':st);c.textContent=(st==='bad'?'Miadı geçti ':'SKT ')+fmtExp(me);meta.append(c)}
-    const nl=it.partiler.length;if(nl>1){const c=document.createElement('span');c.textContent=nl+' parti';meta.append(c)}
+    // Birden çok miad varsa her biri adediyle ayrı gösterilir (en yakın üçü)
+    const sktler=new Map();for(const L of it.partiler)if(L.skt)sktler.set(L.skt,(sktler.get(L.skt)||0)+L.adet);
+    if(sktler.size>1){const sirali=[...sktler].sort((a,b)=>a[0].localeCompare(b[0]));
+      for(const [s,n] of sirali.slice(0,3)){const ss=expStatus(s),c=document.createElement('span');c.className='chip '+(ss==='ok'?'':ss);c.textContent=`SKT ${fmtExp(s)} ×${n}`;meta.append(c)}
+      if(sirali.length>3){const c=document.createElement('span');c.className='chip';c.textContent=`+${sirali.length-3} miad`;meta.append(c)}}
+    else if(me){const c=document.createElement('span');c.className='chip '+(st==='ok'?'':st);c.textContent=(st==='bad'?'Miadı geçti ':'SKT ')+fmtExp(me);meta.append(c)}
+    // Parti sayısı yalnız gerçek parti numaralarından (etiket/barkodla sayılanların partisi yok: "—")
+    const nl=it.partiler.length,np=new Set(it.partiler.map(L=>L.parti).filter(x=>x&&x!=='—')).size;
+    if(np>1){const c=document.createElement('span');c.textContent=np+' parti';meta.append(c)}
     if(kisi&&adetOf(it)!==it.adet){const c=document.createElement('span');c.className='chip';c.textContent='Toplam '+it.adet;meta.append(c)}
     main.append(nm,meta);
     const tog=()=>{openGtin=openGtin===it.gtin?null:it.gtin;render()};
@@ -688,9 +695,12 @@ function miadOku(v){   // "05/28", "0528", "05/2028" -> {skt:'YYAA00'}; boş -> 
   if(ay<1||ay>12||yil<2000||yil>2099)return;
   return {skt:String(yil%100).padStart(2,'0')+String(ay).padStart(2,'0')+'00'};   // gün 00 = ayın sonu (GS1)
 }
-function miadAdetSor(p,kaynak){
-  if((sorulan&&sorulan.p.raw===p.raw)||sorKuyrugu.some(x=>x.p.raw===p.raw))return;
-  sorKuyrugu.push({p,kaynak});if(!sorulan)siradakiniSor();else maSiraCiz();
+/* adet: fotoğrafta sayılan kutu sayısı (panelde dolu gelir). Aynı kod zaten soruluyorsa
+   canlı kamerada yeniden sorulmaz; fotoğraftan gelen adet ise ona eklenir (birden çok fotoğraf). */
+function miadAdetSor(p,kaynak,adet){
+  const ayni=x=>x.p.raw===p.raw,k=sorulan&&ayni(sorulan)?sorulan:sorKuyrugu.find(ayni);
+  if(k){if(adet&&kaynak==='foto'&&k.kaynak==='foto'){k.adet=(k.adet||1)+adet;if(k===sorulan)$('maAdet').value=k.adet}return}
+  sorKuyrugu.push({p,kaynak,adet});if(!sorulan)siradakiniSor();else maSiraCiz();
 }
 function maSiraCiz(){const n=sorKuyrugu.length;$('maSira').hidden=!n;$('maSira').textContent=`+${n} sırada`}
 function siradakiniSor(){
@@ -705,7 +715,7 @@ function siradakiniSor(){
   }
   duraklat=true;const {p,kaynak}=sorulan;
   $('maAd').textContent=nameOf(p.gtin)||'İsimsiz ürün';$('maKod').textContent=ean(p.gtin);$('maEtiket').hidden=!p.etiket;
-  $('maMiad').value=miadYaz(p.expRaw||lsGet('miad-'+p.gtin)||'');$('maAdet').value='1';
+  $('maMiad').value=miadYaz(p.expRaw||lsGet('miad-'+p.gtin)||'');$('maAdet').value=String(sorulan.adet||1);
   maHata('');maSiraCiz();$('maSheet').hidden=$('maPerde').hidden=false;
   // Klavye yalnız gerektiğinde açılsın (kamera görüntüsünü kapatmasın): miad boşsa ya da el okuyucuyla.
   if(!$('maMiad').value)$('maMiad').focus();
@@ -797,8 +807,9 @@ const ZOPT={formats:['DataMatrix','EAN-13','EAN-8','QRCode','Code128'],tryHarder
    odak: yalnız çerçevenin ortasındaki kare, kameranın kendi çözünürlüğünden alınır (4K'da
    büyütme değil gerçek ayrıntı). */
 // Sıra numaraları telefonda hatırlanır (gecis2): yeni geçiş sona eklenir.
+// kucukFoto: yalnız küçük fotoğrafta (WhatsApp'tan gelen gibi) 1,5 kat büyütme; eğik QR etiketleri okur.
 const GECISLER=[{o:1,r:0},{o:1,r:1},{o:0.75,r:2},{o:0.55,r:1},{o:0.4,r:2},{o:0.28,r:3},{o:0.2,r:2},{o:0.4,r:0},
-  {o:0.75,r:1},{o:0.4,r:1},{o:2,r:1,odak:1},{o:2,r:0,odak:1}];
+  {o:0.75,r:1},{o:0.4,r:1},{o:2,r:1,odak:1},{o:2,r:0,odak:1},{o:1.5,r:0,kucukFoto:1}];
 function yumusat(src,r){
   const w=src.width,h=src.height,s=src.data,nn=(2*r+1)*(2*r+1),g=new Uint8ClampedArray(w*h),t=new Uint16Array(w*h);
   for(let i=0,j=0;i<g.length;i++,j+=4)g[i]=(s[j]*77+s[j+1]*150+s[j+2]*29)>>8;
@@ -909,10 +920,10 @@ async function fotoTuval(file){
 async function kodlariBul(work){
   let found=[];
   if(await wasmReady()){
-    const buyuk=Math.max(work.width,work.height)>2600;
+    const boy=Math.max(work.width,work.height),buyuk=boy>2600;
     for(let i=0;i<GECISLER.length;i++){const g=GECISLER[i];setProg((i+1)/(GECISLER.length+1));
       // Odak yalnız canlı kamerada; büyük fotoğrafta tam boy yumuşatma pahalı, 0,75 ölçek aynı işi görür.
-      if(g.odak||(buyuk&&g.o===1&&g.r))continue;
+      if(g.odak||(buyuk&&g.o===1&&g.r)||(g.kucukFoto&&boy>2000))continue;
       try{found=found.concat(await detectWasm(gecisGoruntusu(work,g),g.o))}catch(e){}
       await tick()}
   }
@@ -933,12 +944,14 @@ async function handlePhoto(file){
   const found=await kodlariBul(work);setProg(null);
   const okunan=found.map(f=>({f,p:parseCode(f.text)}));
   const gecerli=okunan.filter(x=>x.p&&x.p.serial);
-  // Karekodsuz (barkod / QR etiket): ürün başına bir kez miad ve adet sorulur; karekodu
+  // Karekodsuz (barkod / QR etiket): aynı ürün ve aynı miad (etiketteki) bir kez sorulur; adet
+  // fotoğrafta sayılan kutu sayısıyla dolu gelir. Farklı miadlı etiketler ayrı sorulur. Karekodu
   // aynı fotoğrafta ya da daha önce görülmüş ürünün barkodu sayılmaz.
   const dmGtin=new Set(gecerli.map(x=>x.p.gtin)),sorulacak=new Map();
   for(const x of okunan)if(x.p&&!x.p.serial){
     if(dmGtin.has(x.p.gtin)||karekodluMu(x.p.gtin))x.gec=true;
-    else{x.sor=true;if(!sorulacak.has(x.p.gtin))sorulacak.set(x.p.gtin,x.p)}}
+    else{x.sor=true;const k=x.p.gtin+'|'+(x.p.expRaw||''),s=sorulacak.get(k);
+      if(s)s.adet++;else sorulacak.set(k,{p:x.p,adet:1})}}
   const sonuclar=gecerli.length?await okumaEkle(gecerli.map(x=>({p:x.p,kaynak:'foto'}))):[];
   gecerli.forEach((x,i)=>x.r=sonuclar[i]);
   let added=0,dup=0,bad=0,bekleyen=0;const css=getComputedStyle(document.documentElement);
@@ -955,9 +968,9 @@ async function handlePhoto(file){
   const mk=(t,c)=>{const s=document.createElement('span');s.className='chip '+c;s.textContent=t;chips.append(s)};
   mk(found.length+' kod bulundu','');if(added)mk(added+' eklendi','ok');if(bekleyen)mk(bekleyen+' bağlantı bekliyor','warn');
   if(dup)mk(dup+' zaten sayılmış','warn');if(bad)mk(bad+' tanınmayan','bad');
-  if(sorulacak.size)mk(sorulacak.size+' ürün: miad ve adet','');
+  if(sorulacak.size){let n=0;sorulacak.forEach(s=>n+=s.adet);mk(`${n} karekodsuz kutu: miad ve adet onayı`,'')}
   if(!found.length){mk('Kod bulunamadı; daha yakından ve net çekin','bad');beep(false)}else if(added)beep(true);
-  sorulacak.forEach(p=>miadAdetSor(p,'foto'));
+  sorulacak.forEach(s=>miadAdetSor(s.p,'foto',s.adet));
 }
 $('photoIn').addEventListener('change',async e=>{const f=e.target.files[0];e.target.value='';await handlePhoto(f)});
 $('galleryIn').addEventListener('change',async e=>{const fs=[...e.target.files];e.target.value='';for(const f of fs)await handlePhoto(f)});

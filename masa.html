@@ -88,6 +88,7 @@ tr:last-child td{border-bottom:0}
 .listhead{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 .listhead input{flex:1 1 220px}
 .empty{padding:28px 16px;text-align:center;color:var(--muted)}
+td.miad{font-size:.84rem;color:var(--muted);white-space:nowrap}
 td.islem{width:1%;white-space:nowrap;text-align:right;padding:2px 6px;vertical-align:middle}
 .sil{min-height:30px;padding:3px 10px;font-size:.8rem;color:var(--muted-2);background:transparent;border-color:transparent}
 .sil:hover{color:var(--bad);border-color:var(--bad-soft);background:var(--bad-soft)}
@@ -263,6 +264,10 @@ document.addEventListener('visibilitychange',()=>{if(!document.hidden)durumCek()
 /* ---------- yardımcılar ---------- */
 const ean=g=>g.startsWith('0')?g.slice(1):g;
 const adOf=u=>u.ad||'İsimsiz ürün';
+// Miadlar adetleriyle, en yakını önce: "09.2028 ×10, 05.2027 ×3"
+function miadMetni(u){const m=new Map();for(const L of u.partiler)if(L.skt)m.set(L.skt.slice(0,7),(m.get(L.skt.slice(0,7))||0)+L.adet);
+  const s=[...m].sort((a,b)=>a[0].localeCompare(b[0])).map(([k,n])=>`${k.slice(5,7)}.${k.slice(0,4)} ×${n}`);
+  return s.length>4?s.slice(0,4).join(', ')+' …':s.join(', ')}
 function fmtZaman(iso){if(!iso)return '';const d=new Date(iso);return isNaN(d)?iso:d.toLocaleString('tr-TR',{dateStyle:'medium',timeStyle:'short'})}
 const dosyaTarih=s=>String(s.baslangic||'').slice(0,10);
 const sayimNo=s=>String(s.id).padStart(4,'0');
@@ -339,11 +344,11 @@ function listeCiz(){
     .sort((a,b)=>adOf(a).localeCompare(adOf(b),'tr'));
   if(!urunler.length){bos('Aramaya uyan ilaç yok.');return}
   const sar=el('div','tablo'),tb=el('table','matris'),th=el('thead'),hr=el('tr');
-  hr.append(el('th','','İLAÇ'),el('th','','BARKOD'),el('th','s','TOPLAM'));
+  hr.append(el('th','','İLAÇ'),el('th','','BARKOD'),el('th','','MİAD'),el('th','s','TOPLAM'));
   kisiAdlari.forEach(k=>hr.append(el('th','s',k.toLocaleUpperCase('tr-TR'))));hr.append(el('th'));th.append(hr);
   const gv=el('tbody');
   for(const u of urunler){const tr=el('tr');
-    tr.append(el('td',u.ad?'':'isimsiz',adOf(u)),el('td','mono',ean(u.gtin)));
+    tr.append(el('td',u.ad?'':'isimsiz',adOf(u)),el('td','mono',ean(u.gtin)),el('td','miad',miadMetni(u)));
     const t=el('td','s');t.append(el('b','',u.adet));tr.append(t);
     kisiAdlari.forEach(k=>{const n=u.kisiler[k]||0;tr.append(el('td','s'+(n?'':' sifir'),n||'·'))});
     tr.append(kisiSec?silHucresi({gtin:u.gtin,personel:kisiSec},`${adOf(u)} (${kisiSec})`):silHucresi({gtin:u.gtin},adOf(u)));
