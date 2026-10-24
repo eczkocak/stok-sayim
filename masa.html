@@ -39,6 +39,8 @@ body{background:var(--bg);color:var(--fg);font-family:-apple-system,BlinkMacSyst
 .bant .chip{background:rgba(255,255,255,.16);color:#fff}
 .bant .chip.bad{background:#fff;color:var(--bad)}
 .bant .zaman{font-size:.78rem;opacity:.85}
+.bant a.chip{text-decoration:none}
+.bant a.chip:hover{background:rgba(255,255,255,.28)}
 .chip{font-size:.78rem;font-weight:650;border-radius:999px;padding:3px 10px;background:var(--sunk);color:var(--muted);white-space:nowrap}
 .chip.warn{background:var(--warn-soft);color:var(--warn)}.chip.bad{background:var(--bad-soft);color:var(--bad)}
 .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
@@ -108,7 +110,7 @@ tr:last-child td{border-bottom:0}
     <div class="bant__ikon"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><path d="M3 7V4h3M18 4h3v3M21 17v3h-3M6 20H3v-3M7.5 8v8M10.5 8v8M13.5 8v8M16.5 8v8"/></svg></div>
     <div class="bant__ad">Stok Sayım<small id="sayimSatir">Sayım masası</small></div>
     <div class="bant__sag">
-      <span class="chip" id="baglanti">Bağlanıyor</span>
+      <span class="row" style="gap:6px"><a class="chip" href="./" target="_blank" rel="noopener">Stok Sayar ↗</a><span class="chip" id="baglanti">Bağlanıyor</span></span>
       <span class="zaman" id="guncel"></span>
     </div>
   </header>
