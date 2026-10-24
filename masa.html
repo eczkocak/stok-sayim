@@ -93,6 +93,21 @@ td.islem{width:1%;white-space:nowrap;text-align:right;padding:2px 6px;vertical-a
 .sil{min-height:30px;padding:3px 10px;font-size:.8rem;color:var(--muted-2);background:transparent;border-color:transparent}
 .sil:hover{color:var(--bad);border-color:var(--bad-soft);background:var(--bad-soft)}
 .sil.onay,.sil.onay:hover{background:var(--bad);border-color:var(--bad);color:#fff}
+.secbant{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--warn-soft);color:var(--warn);border-radius:12px;padding:8px 8px 8px 14px;font-weight:650}
+.secbant span{flex:1 1 auto}
+#gecmisGovde tr{cursor:pointer}
+#gecmisGovde tr:hover td{background:var(--sunk)}
+#gecmisGovde tr.secili td{background:var(--accent-soft);color:var(--accent-dark);font-weight:700}
+tr.urun{cursor:pointer}
+tr.urun:hover td{background:var(--sunk)}
+tr.urun.acik td{background:var(--accent-soft)}
+tr.ayrinti>td{background:var(--sunk);padding:10px 12px 12px}
+.gruptablo{width:auto;min-width:min(560px,100%);background:var(--surface);border:1px solid var(--line);border-radius:8px}
+.gruptablo td{vertical-align:middle}
+.kucuk{min-height:30px;padding:3px 10px;font-size:.82rem}
+.miadForm{display:inline-flex;gap:4px;align-items:center}
+.miadForm input{width:84px;min-height:30px;padding:3px 8px}
+.not{margin:6px 0 0;font-size:.82rem;color:var(--muted)}
 .confirm{background:var(--bad-soft);color:var(--bad);border-radius:10px;padding:10px 12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:space-between;font-size:.9rem;margin:0}
 .bagbox{display:flex;gap:16px;align-items:center;flex-wrap:wrap}
 .bagbox svg{width:220px;height:220px;background:#fff;border:1px solid var(--line);border-radius:10px;padding:6px}
@@ -129,6 +144,7 @@ td.islem{width:1%;white-space:nowrap;text-align:right;padding:2px 6px;vertical-a
   </section>
 
   <div id="icerik" hidden style="display:flex;flex-direction:column;gap:14px">
+    <div class="secbant" id="secBant" hidden><span id="secMetin"></span><button type="button" class="kucuk" id="acigaDon">Açık sayıma dön</button></div>
     <section class="stats" aria-label="Özet">
       <div class="stat"><b id="stSayim">—</b><span id="stSayimAlt">AÇIK SAYIM</span></div>
       <div class="stat"><b id="stCesit">0</b><span>ÇEŞİT</span></div>
@@ -180,7 +196,7 @@ td.islem{width:1%;white-space:nowrap;text-align:right;padding:2px 6px;vertical-a
           </div>
           <input id="ara" type="search" placeholder="İlaç adı veya barkod ara" aria-label="Ara">
           <button type="button" id="temizleBtn" class="danger" hidden>Listeyi temizle</button>
-          <span class="ipucu sol" tabindex="0" data-ipucu="Satırdaki Sil: o ilacın kutularını siler (kişi bazında görünümde yalnız o kişinin). Listeyi temizle: açık sayımdaki bütün kutuları siler; solda bir kişi seçiliyse yalnız onunkileri. İki kez tıklayınca silinir, geri alınamaz."></span>
+          <span class="ipucu sol" tabindex="0" data-ipucu="Ürüne tıklayın: parti ve miad grupları açılır; − bir kutu siler, + bir kutu ekler (karekodsuz), Miad grubun miadını değiştirir, Sil grubu siler. Solda bir kişi seçiliyse düzeltmeler yalnız onun kutularına uygulanır. Satırdaki Sil: o ilacın kutularını siler. Listeyi temizle: gösterilen sayımdaki bütün kutuları siler. Silmeler iki kez tıklayınca olur, geri alınamaz."></span>
         </div>
         <div class="confirm" id="temizleOnay" hidden>
           <span id="temizleMetin"></span>
@@ -191,7 +207,7 @@ td.islem{width:1%;white-space:nowrap;text-align:right;padding:2px 6px;vertical-a
     </div>
 
     <section class="panel" aria-label="Sayımlar">
-      <div class="label">SAYIMLAR<span class="ipucu" tabindex="0" data-ipucu="Son 20 sayım. Kapanmış bir sayımın karekod listesini (TXT) ve ürün listesini (CSV) buradan alabilirsiniz."></span></div>
+      <div class="label">SAYIMLAR<span class="ipucu" tabindex="0" data-ipucu="Son 20 sayım. Bir sayıma tıklayın: üstte ayrıntısı açılır, kişi ve ürün listeleriyle düzeltebilir, dosyalarını alabilirsiniz. Açık sayıma dönmek için üstteki düğme ya da açık sayımın satırı."></span></div>
       <div class="tablo" style="max-height:none">
         <table>
           <thead><tr><th>NO</th><th>BAŞLANGIÇ</th><th>BİTİŞ</th><th class="s">KUTU</th><th></th></tr></thead>
@@ -304,11 +320,22 @@ async function karekodsuzIndir(s,tur){
 }
 
 /* ---------- kişi × ilaç ---------- */
-let kisiSec='',gorunum=lsGet('masa-gorunum')||'kisi';
+let kisiSec='',gorunum=lsGet('masa-gorunum')||'kisi',acikUrun=null;
+/* Gösterilen sayım: açık sayım (durum, canlı) ya da aşağıdaki listeden tıklanan geçmiş sayım
+   (Kod.gs sayimOzeti_). Listeler, dosyalar ve düzeltmeler gösterilen sayıma uygulanır. */
+let secili=null;
+const gorunen=()=>secili||{sayim:durum.sayim,urunler:durum.urunler};
+async function sayimSec(s){
+  if(durum.sayim&&s.id===durum.sayim.id){secili=null;acikUrun=null;ciz();window.scrollTo({top:0,behavior:'smooth'});return}
+  try{const v=await apiGet('sayim',{sayim:s.id});secili={sayim:v.sayim,urunler:v.urunler};acikUrun=null;kisiSec='';ciz();window.scrollTo({top:0,behavior:'smooth'})}
+  catch(e){toast(hataMetni(e,'sayım açılamadı'))}
+}
+async function seciliYenile(){if(!secili)return;
+  try{const v=await apiGet('sayim',{sayim:secili.sayim.id});if(secili&&secili.sayim.id===v.sayim.id){secili={sayim:v.sayim,urunler:v.urunler};ciz()}}catch(e){}}
 // kişi -> {cesit, kutu, urunler:[{u, adet}]}
 function kisiTablosu(){
   const m=new Map();
-  for(const u of durum.urunler)for(const [k,a] of Object.entries(u.kisiler)){
+  for(const u of gorunen().urunler)for(const [k,a] of Object.entries(u.kisiler)){
     let t=m.get(k);if(!t){t={cesit:0,kutu:0,urunler:[]};m.set(k,t)}
     t.cesit++;t.kutu+=a;t.urunler.push({u,adet:a})}
   for(const t of m.values())t.urunler.sort((a,b)=>adOf(a.u).localeCompare(adOf(b.u),'tr'));
@@ -316,22 +343,24 @@ function kisiTablosu(){
 }
 function ciz(){listeCiz();gecmisCiz()}
 function listeCiz(){
-  const s=durum.sayim,kisiler=kisiTablosu();
+  const V=gorunen(),s=V.sayim,kisiler=kisiTablosu();
   if(!kisiler.has(kisiSec))kisiSec='';
-  const kutu=durum.urunler.reduce((t,u)=>t+u.adet,0);
+  const kutu=V.urunler.reduce((t,u)=>t+u.adet,0);
   $('stSayim').textContent=s?'#'+s.id:'—';
-  $('stSayimAlt').textContent=s?'AÇIK SAYIM · '+fmtZaman(s.baslangic).toLocaleUpperCase('tr-TR'):'AÇIK SAYIM';
-  $('stCesit').textContent=durum.urunler.length;$('stKutu').textContent=kutu;$('stKisi').textContent=kisiler.size;
+  $('stSayimAlt').textContent=!s?'AÇIK SAYIM':(s.bitis?'KAPALI SAYIM · ':'AÇIK SAYIM · ')+fmtZaman(s.baslangic).toLocaleUpperCase('tr-TR');
+  $('stCesit').textContent=V.urunler.length;$('stKutu').textContent=kutu;$('stKisi').textContent=kisiler.size;
   $('sayimSatir').textContent=s?`Sayım #${s.id} · başlangıç ${fmtZaman(s.baslangic)}`:'Sayım masası';
+  $('secBant').hidden=!secili;
+  if(secili)$('secMetin').textContent=`Sayım #${s.id} gösteriliyor · ${fmtZaman(s.baslangic)} – ${s.bitis?fmtZaman(s.bitis):'açık'}`;
   $('kisiTxtBtn').textContent=kisiSec?`${kisiSec} listesi (TXT)`:'Kişi listesi (TXT)';
   $('temizleBtn').textContent=kisiSec?`Okumalarını temizle (${kisiSec})`:'Listeyi temizle';
-  $('temizleBtn').hidden=!durum.urunler.length;
+  $('temizleBtn').hidden=!V.urunler.length;
 
   const g=$('kisiGovde');g.textContent='';
   const satir=(k,ad,cesit,n)=>{const tr=el('tr',kisiSec===k?'secili':'');tr.tabIndex=0;
     tr.append(el('td','',ad),el('td','s',cesit),el('td','s',n));
     const sec=()=>{kisiSec=k;ciz()};tr.onclick=sec;tr.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();sec()}};g.append(tr)};
-  satir('','Herkes',durum.urunler.length,kutu);
+  satir('','Herkes',V.urunler.length,kutu);
   for(const [k,t] of kisiler)satir(k,k,t.cesit,t.kutu);
 
   document.querySelectorAll('.sekme button').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.gorunum===gorunum)));
@@ -339,7 +368,7 @@ function listeCiz(){
   const uyar=u=>!q||u.gtin.includes(q)||(u.ad||'').toLocaleLowerCase('tr-TR').includes(q);
   const liste=$('liste');liste.textContent='';
   const bos=m=>liste.append(el('div','empty',m));
-  if(!durum.urunler.length){bos('Henüz okutulan ürün yok.');return}
+  if(!V.urunler.length){bos(secili?'Bu sayımda kutu yok.':'Henüz okutulan ürün yok.');return}
 
   if(gorunum==='kisi'){
     const gruplar=el('div','gruplar');
@@ -349,8 +378,10 @@ function listeCiz(){
       const kutu=el('div','grup'),h=el('h3','',k);h.append(el('span','',`${t.cesit} çeşit · ${t.kutu} kutu`));
       const tb=el('table'),th=el('thead');th.innerHTML='<tr><th>İLAÇ</th><th>BARKOD</th><th class="s">ADET</th><th></th></tr>';
       const gv=el('tbody');
-      for(const {u,adet} of satirlar){const tr=el('tr');
+      for(const {u,adet} of satirlar){const tr=el('tr','urun');tr.title='Ayrıntı ve düzeltme';
         tr.append(el('td',u.ad?'':'isimsiz',adOf(u)),el('td','mono',ean(u.gtin)),el('td','s',adet),silHucresi({gtin:u.gtin,personel:k},`${adOf(u)} (${k})`));
+        // Kişinin ürününe tıklanınca ürün bazında ayrıntısı, o kişi seçili olarak açılır
+        tr.onclick=e=>{if(e.target.closest('button'))return;kisiSec=k;gorunum='urun';lsSet('masa-gorunum',gorunum);acikUrun=u.gtin;ciz()};
         gv.append(tr)}
       tb.append(th,gv);kutu.append(h,tb);gruplar.append(kutu)}
     if(gruplar.childElementCount)liste.append(gruplar);else bos('Aramaya uyan ilaç yok.');
@@ -358,24 +389,71 @@ function listeCiz(){
   }
   // Ürün bazında: satırlar ilaç, sütunlar kişiler
   const kisiAdlari=kisiSec?[kisiSec]:[...kisiler.keys()];
-  const urunler=durum.urunler.filter(u=>uyar(u)&&(!kisiSec||u.kisiler[kisiSec]))
+  const urunler=V.urunler.filter(u=>uyar(u)&&(!kisiSec||u.kisiler[kisiSec]))
     .sort((a,b)=>adOf(a).localeCompare(adOf(b),'tr'));
   if(!urunler.length){bos('Aramaya uyan ilaç yok.');return}
   const sar=el('div','tablo'),tb=el('table','matris'),th=el('thead'),hr=el('tr');
   hr.append(el('th','','İLAÇ'),el('th','','BARKOD'),el('th','','MİAD'),el('th','s','TOPLAM'));
   kisiAdlari.forEach(k=>hr.append(el('th','s',k.toLocaleUpperCase('tr-TR'))));hr.append(el('th'));th.append(hr);
   const gv=el('tbody');
-  for(const u of urunler){const tr=el('tr');
+  for(const u of urunler){const tr=el('tr','urun'+(acikUrun===u.gtin?' acik':''));tr.title='Ayrıntı ve düzeltme';
+    tr.onclick=e=>{if(e.target.closest('button'))return;acikUrun=acikUrun===u.gtin?null:u.gtin;ciz()};
     tr.append(el('td',u.ad?'':'isimsiz',adOf(u)),el('td','mono',ean(u.gtin)),el('td','miad',miadMetni(u)));
     const t=el('td','s');t.append(el('b','',u.adet));tr.append(t);
     kisiAdlari.forEach(k=>{const n=u.kisiler[k]||0;tr.append(el('td','s'+(n?'':' sifir'),n||'·'))});
     tr.append(kisiSec?silHucresi({gtin:u.gtin,personel:kisiSec},`${adOf(u)} (${kisiSec})`):silHucresi({gtin:u.gtin},adOf(u)));
-    gv.append(tr)}
+    gv.append(tr);
+    if(acikUrun===u.gtin){const d=el('tr','ayrinti'),td=el('td');td.colSpan=hr.children.length;td.append(ayrinti(u));d.append(td);gv.append(d)}}
   tb.append(th,gv);sar.append(tb);liste.append(sar);
+}
+const ayYil=iso=>iso?`${iso.slice(5,7)}/${iso.slice(0,4)}`:'—';
+/* Ürün ayrıntısı: parti + miad grupları ve düzeltme düğmeleri (Kod.gs duzelt_). Kişi seçiliyse
+   adetler ve düzeltmeler yalnız onun kutuları. Karekodlu grupta yalnız − ve Sil (seri no. elle girilmez). */
+function ayrinti(u){
+  const k=kisiSec,kutu=el('div');
+  const gruplar=u.partiler.map(p=>({...p,n:k?((p.kisiler||{})[k]||0):p.adet})).filter(p=>p.n>0)
+    .sort((a,b)=>(a.skt||'9').localeCompare(b.skt||'9')||a.parti.localeCompare(b.parti,'tr'));
+  const tb=el('table','gruptablo'),th=el('thead');
+  th.innerHTML=`<tr><th>PARTİ</th><th>MİAD</th><th class="s">${k?xmlKac(k.toLocaleUpperCase('tr-TR'))+' · ':''}ADET</th><th></th></tr>`;
+  const gv=el('tbody');
+  for(const p of gruplar){
+    const tr=el('tr'),karekodlu=p.seri>0,g={gtin:u.gtin,parti:p.parti,skt:p.skt||'',...(k?{personel:k}:{})};
+    const ne=`${adOf(u)} ${ayYil(p.skt)}`;
+    tr.append(el('td','mono',p.parti),el('td','',ayYil(p.skt)),el('td','s',p.n));
+    const islem=el('td','islem'),d=(m,baslik,f)=>{const b=el('button','kucuk',m);b.type='button';b.title=baslik;b.onclick=async()=>{b.disabled=true;await f();b.disabled=false};return b};
+    islem.append(d('−','Bir kutu sil',()=>duzelt(g,'eksi',ne)));
+    if(!karekodlu){islem.append(' ',d('+','Bir kutu ekle',()=>duzelt(g,'arti',ne)),' ');
+      const mb=el('button','kucuk','Miad');mb.type='button';mb.title='Bu grubun miadını değiştir';
+      mb.onclick=()=>{const f=el('form','miadForm'),inp=el('input');inp.placeholder='AA/YY';inp.value=p.skt?`${p.skt.slice(5,7)}/${p.skt.slice(2,4)}`:'';inp.setAttribute('aria-label','Yeni miad (ay/yıl)');
+        const k2=el('button','kucuk primary','Kaydet'),v2=el('button','kucuk','Vazgeç');k2.type='submit';v2.type='button';
+        f.append(inp,k2,v2);mb.replaceWith(f);inp.focus();inp.select();
+        v2.onclick=()=>f.replaceWith(mb);
+        f.onsubmit=async e=>{e.preventDefault();const y=miadOku(inp.value);if(!y){toast('Miad ay/yıl olmalı: 09/28');inp.focus();return}
+          k2.disabled=true;await duzelt(g,'miad',ne,y)}};
+      islem.append(mb,' ')}
+    islem.append(onayliSil(ne,()=>duzelt(g,'sil',ne)));
+    tr.append(islem);gv.append(tr)}
+  tb.append(th,gv);kutu.append(tb);
+  if(k)kutu.append(el('p','not',`Yalnız ${k} adlı kişinin kutuları gösteriliyor ve düzeltiliyor.`));
+  return kutu;
+}
+const xmlKac=v=>String(v).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+// "09/28", "9/2028", "0928" -> "280900" (gün 00: ayın sonu, GS1)
+function miadOku(t){const m=String(t).trim().match(/^(\d{1,2})\s*[\/.\-]?\s*(\d{2}|\d{4})$/);if(!m)return null;
+  const ay=+m[1],yil=m[2].length===4?+m[2]%100:+m[2];if(ay<1||ay>12)return null;
+  return String(yil).padStart(2,'0')+String(ay).padStart(2,'0')+'00'}
+async function duzelt(g,eylem,ne,yeni){
+  try{const v=await apiPost('duzelt',{...g,eylem,...(yeni?{yeni}:{}),sayim_id:gorunen().sayim.id});
+    toast(!v.degisen?'Değişecek kutu kalmamış':{eksi:`${ne}: 1 kutu silindi`,arti:`${ne}: 1 kutu eklendi`,miad:`${ne}: ${v.degisen} kutunun miadı değişti`,sil:`${ne}: ${v.degisen} kutu silindi`}[eylem]);
+    durumCek();seciliYenile()}
+  catch(e){toast(hataMetni(e,'düzeltilemedi'))}
 }
 function gecmisCiz(){
   const g=$('gecmisGovde');g.textContent='';
-  for(const s of durum.gecmis){const tr=el('tr');
+  const gosterilen=gorunen().sayim;
+  for(const s of durum.gecmis){const tr=el('tr',gosterilen&&gosterilen.id===s.id?'secili':'');tr.tabIndex=0;tr.title='Ayrıntısını üstte göster';
+    tr.onclick=e=>{if(!e.target.closest('button'))sayimSec(s)};
+    tr.onkeydown=e=>{if(e.target===tr&&(e.key==='Enter'||e.key===' ')){e.preventDefault();sayimSec(s)}};
     tr.append(el('td','','#'+s.id),el('td','',fmtZaman(s.baslangic)),el('td',s.bitis?'':'bos',s.bitis?fmtZaman(s.bitis):'açık'),el('td','s',s.kutu));
     const td=el('td','s'),t=el('button','','TXT'),b=el('button','','Barkod'),x=el('button','','QR Excel'),c=el('button','','CSV');
     t.type=b.type=x.type=c.type='button';t.onclick=()=>sayimIndir(s,'txt',$('gsOpt').checked);c.onclick=()=>sayimIndir(s,'csv');
@@ -387,25 +465,26 @@ function gecmisCiz(){
 /* ---------- silme (Kod.gs temizle_) ---------- */
 const hataMetni=(e,ne)=>e.ag?`Bağlantı yok; ${ne}`:e.message==='bilinmeyen işlem'?'Google\'daki kod eski: Kod.gs güncellenmeli':e.message;
 async function temizle(g,ne){
-  try{const v=await apiPost('temizle',{...g,sayim_id:durum.sayim.id});
-    toast(v.silinen?`${ne}: ${v.silinen} kutu silindi`:'Silinecek kutu kalmamış');durumCek()}
+  try{const v=await apiPost('temizle',{...g,sayim_id:gorunen().sayim.id});
+    toast(v.silinen?`${ne}: ${v.silinen} kutu silindi`:'Silinecek kutu kalmamış');durumCek();seciliYenile()}
   catch(e){toast(hataMetni(e,'silinemedi'))}
 }
-// Satır düğmesi: ilk tıklamada "Silinsin mi?" olur, 4 sn içinde ikinci tıklamada siler.
-function silHucresi(g,ne){
-  const td=el('td','islem'),b=el('button','sil','Sil');b.type='button';b.title=ne+' — sil';let t;
+// Silme düğmesi: ilk tıklamada "Silinsin mi?" olur, 4 sn içinde ikinci tıklamada siler.
+function onayliSil(ne,f){
+  const b=el('button','sil','Sil');b.type='button';b.title=ne+' — sil';let t;
   b.onclick=async()=>{
     if(!b.classList.contains('onay')){b.classList.add('onay');b.textContent='Silinsin mi?';
       t=setTimeout(()=>{b.classList.remove('onay');b.textContent='Sil'},4000);return}
-    clearTimeout(t);b.disabled=true;b.textContent='Siliniyor…';await temizle(g,ne)};
-  td.append(b);return td;
+    clearTimeout(t);b.disabled=true;b.textContent='Siliniyor…';await f()};
+  return b;
 }
+function silHucresi(g,ne){const td=el('td','islem');td.append(onayliSil(ne,()=>temizle(g,ne)));return td}
 let bekleyen=null;
 $('temizleBtn').onclick=()=>{
-  const kutu=kisiSec?durum.urunler.reduce((t,u)=>t+(u.kisiler[kisiSec]||0),0):durum.urunler.reduce((t,u)=>t+u.adet,0);
+  const V=gorunen(),kutu=kisiSec?V.urunler.reduce((t,u)=>t+(u.kisiler[kisiSec]||0),0):V.urunler.reduce((t,u)=>t+u.adet,0);
   bekleyen=kisiSec?{g:{personel:kisiSec},ne:kisiSec}:{g:{hepsi:true},ne:'Liste'};
-  $('temizleMetin').textContent=kisiSec?`${kisiSec} adlı kişinin açık sayımdaki ${kutu} kutusu silinsin mi? Geri alınamaz.`
-    :`Açık sayımdaki ${kutu} kutunun hepsi silinsin mi? Geri alınamaz; sayım numarası değişmez.`;
+  $('temizleMetin').textContent=kisiSec?`${kisiSec} adlı kişinin Sayım #${V.sayim.id}'deki ${kutu} kutusu silinsin mi? Geri alınamaz.`
+    :`Sayım #${V.sayim.id}'deki ${kutu} kutunun hepsi silinsin mi? Geri alınamaz; sayım numarası değişmez.`;
   $('temizleOnay').hidden=false};
 $('temizleHayir').onclick=()=>{$('temizleOnay').hidden=true;bekleyen=null};
 $('temizleEvet').onclick=async()=>{if(!bekleyen)return;const b=bekleyen;bekleyen=null;
@@ -413,7 +492,7 @@ $('temizleEvet').onclick=async()=>{if(!bekleyen)return;const b=bekleyen;bekleyen
 
 /* Kişi listesi: Not Defteri'nde düzgün okunsun diye sabit genişlikli sütunlar. */
 function kisiListesiMetni(){
-  const s=durum.sayim,kisiler=kisiTablosu(),satirlar=[];
+  const V=gorunen(),s=V.sayim,kisiler=kisiTablosu(),satirlar=[];
   const sag=(v,n)=>String(v).padStart(n),sol=(v,n)=>{v=String(v);return v.length>n?v.slice(0,n-1)+'…':v.padEnd(n)};
   satirlar.push(`STOK SAYIM #${s.id} - KİŞİ BAZINDA LİSTE`,
     `Başlangıç: ${fmtZaman(s.baslangic)}    Alındı: ${new Date().toLocaleString('tr-TR',{dateStyle:'medium',timeStyle:'short'})}`,'');
@@ -424,18 +503,21 @@ function kisiListesiMetni(){
     for(const {u,adet} of t.urunler)satirlar.push(`  ${sol(ean(u.gtin),15)} ${sol(adOf(u),42)} ${sag(adet,5)}`);
     satirlar.push('');
   }
-  if(!kisiSec)satirlar.push(`TOPLAM: ${durum.urunler.length} çeşit, ${durum.urunler.reduce((t,u)=>t+u.adet,0)} kutu`);
+  if(!kisiSec)satirlar.push(`TOPLAM: ${V.urunler.length} çeşit, ${V.urunler.reduce((t,u)=>t+u.adet,0)} kutu`);
   return '﻿'+satirlar.join('\r\n')+'\r\n';
 }
 
 /* ---------- düğmeler ---------- */
-$('txtBtn').onclick=()=>{if(durum.sayim)sayimIndir(durum.sayim,'txt',$('gsOpt').checked)};
-$('csvBtn').onclick=()=>{if(durum.sayim)sayimIndir(durum.sayim,'csv')};
-$('barkodTxtBtn').onclick=()=>{if(durum.sayim)karekodsuzIndir(durum.sayim,'barkod')};
-$('barkodKopyaBtn').onclick=()=>{if(durum.sayim)karekodsuzIndir(durum.sayim,'kopya')};
-$('qrXlsxBtn').onclick=()=>{if(durum.sayim)karekodsuzIndir(durum.sayim,'qr')};
-$('kisiTxtBtn').onclick=()=>{const s=durum.sayim;if(!s)return;
-  if(!durum.urunler.length){toast('Henüz okutulan ürün yok');return}
+// Dosyalar gösterilen sayımın (açık ya da aşağıdan seçilen)
+const gs=()=>gorunen().sayim;
+$('txtBtn').onclick=()=>{if(gs())sayimIndir(gs(),'txt',$('gsOpt').checked)};
+$('csvBtn').onclick=()=>{if(gs())sayimIndir(gs(),'csv')};
+$('barkodTxtBtn').onclick=()=>{if(gs())karekodsuzIndir(gs(),'barkod')};
+$('barkodKopyaBtn').onclick=()=>{if(gs())karekodsuzIndir(gs(),'kopya')};
+$('qrXlsxBtn').onclick=()=>{if(gs())karekodsuzIndir(gs(),'qr')};
+$('acigaDon').onclick=()=>{secili=null;acikUrun=null;ciz()};
+$('kisiTxtBtn').onclick=()=>{const s=gs();if(!s)return;
+  if(!gorunen().urunler.length){toast('Bu sayımda kutu yok');return}
   const ek=kisiSec?kisiSec.toLocaleLowerCase('tr-TR').replace(/[^\p{L}\p{N}]+/gu,'-'):'kisiler';
   indirDosya(`sayim-${sayimNo(s)}-${dosyaTarih(s)}-${ek}.txt`,kisiListesiMetni(),'text/plain;charset=utf-8');
   toast(kisiSec?`${kisiSec} listesi indirildi`:'Kişi listesi indirildi')};
