@@ -137,11 +137,12 @@ td.islem{width:1%;white-space:nowrap;text-align:right;padding:2px 6px;vertical-a
     </section>
 
     <section class="panel" aria-label="Dışa aktarma">
-      <div class="label">TXT / EXCEL AL<span class="ipucu" tabindex="0" data-ipucu="Karekod listesi: açık sayımdaki karekodlu kutular, her kutu bir satır (Tria'ya aktarılacak dosya). Barkodlu ürünler: EAN-13 barkodla sayılan kutular, her kutu bir satır. QR etiketli: eczane etiketli ürünler Excel'de; ürün adı, aynı barkodun her miadı ayrı satırda toplam adet. Kişi listesi: kim hangi ilaçtan kaç kutu saydı; solda bir kişi seçiliyse yalnız onunki. Dosyalar İndirilenler klasörüne iner."></span></div>
+      <div class="label">TXT / EXCEL AL<span class="ipucu" tabindex="0" data-ipucu="Karekod listesi: açık sayımdaki karekodlu kutular, her kutu bir satır (Tria'ya aktarılacak dosya). Barkod listesi: karekodsuz bütün kutular (EAN-13 barkodlu ve QR etiketli), her kutu bir satır; Kopyala ile dosya açmadan panoya alınır. QR etiketli: eczane etiketli ürünler Excel'de; ürün adı, aynı barkodun her miadı ayrı satırda toplam adet. Kişi listesi: kim hangi ilaçtan kaç kutu saydı; solda bir kişi seçiliyse yalnız onunki. Dosyalar İndirilenler klasörüne iner."></span></div>
       <div class="row">
         <button type="button" class="primary" id="txtBtn">Karekod listesi (TXT)</button>
         <label class="secim"><input type="checkbox" id="gsOpt">GS ayırıcı<span class="ipucu" tabindex="0" data-ipucu="Tria karekodları GS (grup ayırıcı) karakteriyle istiyorsa işaretleyin. Bilmiyorsanız işaretlemeyin."></span></label>
-        <button type="button" id="barkodTxtBtn">Barkodlu ürünler (TXT)</button>
+        <button type="button" id="barkodTxtBtn">Barkod listesi (TXT)</button>
+        <button type="button" id="barkodKopyaBtn">Kopyala</button>
         <button type="button" id="qrXlsxBtn">QR etiketli ürünler (Excel)</button>
         <button type="button" id="kisiTxtBtn">Kişi listesi (TXT)</button>
         <button type="button" id="csvBtn">Ürün listesi (CSV)</button>
@@ -288,12 +289,15 @@ async function sayimIndir(s,tur,gs){
   catch(e){toast(e.ag?'Bağlantı yok; indirilemedi':e.message)}
 }
 
-/* Karekodsuz kutular (liste.js): barkodlu -> TXT (her kutu bir satır), QR etiketli -> Excel. */
+/* Karekodsuz kutular (liste.js): barkod listesi (barkodlu + QR etiketli, her kutu bir satır)
+   TXT ya da panoya; QR etiketli -> Excel. */
 async function karekodsuzIndir(s,tur){
   try{const {satirlar}=await apiGet('karekodsuz',{sayim:s.id});
     const ad=`sayim-${sayimNo(s)}-${dosyaTarih(s)}`;
-    if(tur==='barkod'){const t=barkodTxt(satirlar);if(!t){toast(`Sayım #${s.id}'de barkodla sayılmış ürün yok`);return}
-      indirDosya(ad+'-barkod.txt',t,'text/plain;charset=utf-8');toast(`Barkodlu ürünler indirildi (${t.split('\r\n').length} kutu)`)}
+    if(tur==='barkod'||tur==='kopya'){const t=barkodTxt(satirlar);if(!t){toast(`Sayım #${s.id}'de karekodsuz ürün yok`);return}
+      const n=t.split('\r\n').length;
+      if(tur==='kopya'){try{await navigator.clipboard.writeText(t);toast(`${n} barkod panoya kopyalandı`)}catch(e){toast('Panoya kopyalanamadı; TXT olarak indirin')}return}
+      indirDosya(ad+'-barkod.txt',t,'text/plain;charset=utf-8');toast(`Barkod listesi indirildi (${n} kutu)`)}
     else{const n=qrSatirlari(satirlar).length;if(!n){toast(`Sayım #${s.id}'de QR etiketli ürün yok`);return}
       indirDosya(ad+'-qr.xlsx',qrXlsx(satirlar),'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');toast(`QR etiketli ürünler indirildi (${n} satır)`)}}
   catch(e){toast(e.ag?'Bağlantı yok; indirilemedi':e.message==='bilinmeyen işlem'?'Google\'daki kod eski: Kod.gs güncellenmeli':e.message)}
@@ -428,6 +432,7 @@ function kisiListesiMetni(){
 $('txtBtn').onclick=()=>{if(durum.sayim)sayimIndir(durum.sayim,'txt',$('gsOpt').checked)};
 $('csvBtn').onclick=()=>{if(durum.sayim)sayimIndir(durum.sayim,'csv')};
 $('barkodTxtBtn').onclick=()=>{if(durum.sayim)karekodsuzIndir(durum.sayim,'barkod')};
+$('barkodKopyaBtn').onclick=()=>{if(durum.sayim)karekodsuzIndir(durum.sayim,'kopya')};
 $('qrXlsxBtn').onclick=()=>{if(durum.sayim)karekodsuzIndir(durum.sayim,'qr')};
 $('kisiTxtBtn').onclick=()=>{const s=durum.sayim;if(!s)return;
   if(!durum.urunler.length){toast('Henüz okutulan ürün yok');return}

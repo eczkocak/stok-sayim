@@ -1,14 +1,14 @@
 /* Karekodsuz kutuların dosyaları (telefon sayfası ve sayım masası birlikte kullanır).
    Google karekodsuz_ ürün + tür + miad ayı başına toplamı verir:
    {gtin, barkod, ad, tur: 'qr' | 'barkod', ay: 'YYYY-AA' | '', adet}.
-   - Barkodlu (EAN-13 vb.): Tria için TXT, her kutu bir satır.
+   - Barkod listesi (TXT): karekodsuz bütün kutular (EAN-13 barkodlu ve QR etiketli), her kutu
+     bir satır; adet girmeden kopyalayıp yapıştırmak için.
    - QR etiketli: Excel (xlsx); aynı barkodun her miadı ayrı satır, adet toplamı.
    xlsx elle yazılır (sıkıştırmasız zip): dış kütüphane gerekmez. */
 (function (w) {
   const sirala = (a, b) => (a.ad || '~' + a.barkod).localeCompare(b.ad || '~' + b.barkod, 'tr') || a.ay.localeCompare(b.ay);
 
-  w.barkodTxt = satirlar => satirlar.filter(s => s.tur === 'barkod').sort(sirala)
-    .flatMap(s => Array(s.adet).fill(s.barkod)).join('\r\n');
+  w.barkodTxt = satirlar => [...satirlar].sort(sirala).flatMap(s => Array(s.adet).fill(s.barkod)).join('\r\n');
 
   w.qrSatirlari = satirlar => satirlar.filter(s => s.tur === 'qr').sort(sirala)
     .map(s => [s.barkod, s.ad || '', s.ay ? s.ay.slice(5, 7) + '/' + s.ay.slice(0, 4) : '', s.adet]);
