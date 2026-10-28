@@ -75,11 +75,6 @@ input[type=text],input[type=search],select{font:inherit;border:1px solid var(--l
 .progress i{display:block;height:100%;background:var(--accent);width:0;transition:width .15s}
 .listhead{display:flex;gap:8px;flex-wrap:wrap}
 .listhead input{flex:1 1 180px}
-.kisiler{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
-.kisi{min-height:38px;padding:4px 13px;border-radius:999px;font-size:.88rem;gap:7px}
-.kisi b{font-variant-numeric:tabular-nums;color:var(--muted)}
-.kisi[aria-pressed=true],.kisi[aria-pressed=true]:hover{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
-.kisi[aria-pressed=true] b{color:inherit}
 .list{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--surface);box-shadow:var(--golge)}
 .item{display:grid;grid-template-columns:4px 1fr auto;gap:0 12px;border-top:1px solid var(--line);align-items:stretch}
 .item:first-child{border-top:0}
@@ -208,7 +203,7 @@ body.kamerada{overflow:hidden}
   </section>
 
   <section class="panel" id="kimlik" hidden aria-label="Sayan kişi">
-    <div class="label">ADINIZ<span class="ipucu" tabindex="0" data-ipucu="Okuttuğunuz her kutu bu adla kaydedilir; listede kimin kaç kutu saydığı görünür. Bu telefonda hatırlanır."></span></div>
+    <div class="label">ADINIZ<span class="ipucu" tabindex="0" data-ipucu="Okuttuğunuz her kutu bu adla kaydedilir; listede yalnız sizin saydıklarınız görünür. Bu telefonda hatırlanır."></span></div>
     <form class="row" id="kimForm" autocomplete="off">
       <input id="adIn" type="text" maxlength="40" placeholder="Ad Soyad" aria-label="Adınız">
       <button type="submit" class="primary">Sayıma başla</button>
@@ -255,10 +250,6 @@ body.kamerada{overflow:hidden}
   </section>
 
   <section aria-label="Sayım listesi" style="display:flex;flex-direction:column;gap:10px">
-    <div id="kisiSatir" style="display:flex;flex-direction:column;gap:6px" hidden>
-      <div class="label">SAYANLAR<span class="ipucu" tabindex="0" data-ipucu="Bütün telefonlardan okutulanlar burada toplanır. Bir kişiye dokunun: liste yalnız onun okuttuğu ürünleri ve onun saydığı adetleri gösterir. Herkes: toplam."></span></div>
-      <div class="kisiler" id="kisiler" role="group" aria-label="Sayanlar"></div>
-    </div>
     <div class="listhead">
       <input id="search" type="search" placeholder="Ürün adı veya barkod ara" aria-label="Ara">
       <select id="sort" aria-label="Sırala">
@@ -490,7 +481,7 @@ function kimlikCiz(){
   $('kimBtn').hidden=!ben.ad;$('kimBtn').textContent=ben.ad;
 }
 $('kimForm').addEventListener('submit',e=>{e.preventDefault();const v=$('adIn').value.trim().slice(0,40);if(!v){$('adIn').focus();return}
-  ben.ad=v;lsSet('personel',v);kimlikCiz()});
+  ben.ad=v;lsSet('personel',v);kimlikCiz();render()});
 
 /* ---------- kurulum: karekod, yapıştırma, başka telefonu bağlama ---------- */
 function kurulumKaydet(a){
@@ -517,7 +508,7 @@ $('bagBtn').onclick=()=>{
 $('bagKapat').onclick=()=>{$('bagBox').hidden=true;$('bagKod').textContent='';$('bagIn').value=''};
 $('bagKopya').onclick=()=>{const t=$('bagIn').value;
   navigator.clipboard.writeText(t).then(()=>toast('Bağlantı kopyalandı'),()=>{$('bagIn').focus();$('bagIn').select();toast('Metin seçildi; kopyala deyin')})};
-$('kimBtn').onclick=()=>{$('adIn').value=ben.ad;ben.ad='';kimlikCiz();$('adIn').focus()};
+$('kimBtn').onclick=()=>{$('adIn').value=ben.ad;ben.ad='';kimlikCiz();render();$('adIn').focus()};
 
 /* ---------- dates ---------- */
 const today=new Date();today.setHours(0,0,0,0);
@@ -573,8 +564,19 @@ function nameOf(g){const u=urunMap.get(g);return u?u.ad:''}
 
 /* ---------- rendering ---------- */
 let openGtin=null;
+/* Telefonda yalnız bu telefondaki kişinin (ben.ad) saydıkları görünür; herkesin sayımı ve sayanlar
+   yalnız sayım masasında. Ürün ve parti/miad adetleri kişinin kutularına indirgenir (durum'da her
+   grubun kişi başına sayısı vardır). Karekodlu grupta kişinin kutuları da karekodludur. */
+function benimUrunlerim(){
+  if(!ben.ad)return [];
+  const out=[];
+  for(const u of durum.urunler){const n=u.kisiler[ben.ad]||0;if(!n)continue;
+    const partiler=u.partiler.map(p=>{const k=(p.kisiler||{})[ben.ad]||0;return {...p,adet:k,seri:(p.seri||0)>=p.adet?k:0}}).filter(p=>p.adet>0);
+    out.push({...u,adet:n,seri:partiler.reduce((t,p)=>t+p.seri,0),partiler,kisiler:{[ben.ad]:n}})}
+  return out;
+}
 function render(){
-  const items=durum.urunler;
+  const items=benimUrunlerim();
   let boxes=0,soon=0,exp=0;
   for(const it of items){boxes+=it.adet;const s=expStatus(minExp(it));if(s==='warn')soon++;if(s==='bad')exp++}
   $('stKinds').textContent=items.length;$('stBoxes').textContent=boxes;$('kamToplam').textContent=boxes+kuyruk.length;$('stSoon').textContent=soon;$('stExp').textContent=exp;
@@ -583,20 +585,15 @@ function render(){
   const nb=$('namesInfo').querySelector('.balon');
   if(nb)nb.textContent=(durum.urun_adi_sayisi?`${durum.urun_adi_sayisi.toLocaleString('tr-TR')} ürün ismi yüklü. `:'')+$('namesInfo').dataset.ipucu;
   gecmisCiz();
-  const kisi=kisilerCiz(items,boxes);
-  // Kişi seçiliyken adet o kişinin saydığıdır; +/− toplamı değiştirdiği için gizlenir.
-  const adetOf=it=>kisi?(it.kisiler[kisi]||0):it.adet;
-  let satir=durum.sayim?`Sayım #${durum.sayim.id} · başlangıç ${fmtZaman(durum.sayim.baslangic)}`:'';
-  if(kisi){const ks=items.filter(it=>it.kisiler[kisi]);satir+=` · ${kisi}: ${ks.length} çeşit, ${ks.reduce((t,it)=>t+it.kisiler[kisi],0)} kutu`}
-  $('sessionLine').textContent=satir;
+  $('sessionLine').textContent=durum.sayim?`Sayım #${durum.sayim.id} · başlangıç ${fmtZaman(durum.sayim.baslangic)}`:'';
 
   const q=$('search').value.trim().toLocaleLowerCase('tr-TR');
-  let rows=items.filter(it=>(!kisi||it.kisiler[kisi])&&(!q||it.gtin.includes(q)||(it.ad||'').toLocaleLowerCase('tr-TR').includes(q)));
+  let rows=items.filter(it=>!q||it.gtin.includes(q)||(it.ad||'').toLocaleLowerCase('tr-TR').includes(q));
   const srt=$('sort').value;
   rows.sort((a,b)=>srt==='name'?(a.ad||'~'+a.gtin).localeCompare(b.ad||'~'+b.gtin,'tr')
-    :srt==='qty'?adetOf(b)-adetOf(a):srt==='exp'?(minExp(a)||'9').localeCompare(minExp(b)||'9'):(b.son||'').localeCompare(a.son||''));
+    :srt==='qty'?b.adet-a.adet:srt==='exp'?(minExp(a)||'9').localeCompare(minExp(b)||'9'):(b.son||'').localeCompare(a.son||''));
   const list=$('list');list.textContent='';
-  if(!rows.length){const e=document.createElement('div');e.className='empty';e.textContent=!items.length?'Henüz okutulan ürün yok.':q?'Aramaya uyan ürün yok.':`${kisi} henüz ürün okutmadı.`;list.append(e);return}
+  if(!rows.length){const e=document.createElement('div');e.className='empty';e.textContent=!items.length?'Henüz okuttuğunuz ürün yok.':'Aramaya uyan ürün yok.';list.append(e);return}
   for(const it of rows){
     const me=minExp(it),st=expStatus(me);
     const el=document.createElement('div');el.className='item'+(st&&st!=='ok'?' s-'+st:'');
@@ -614,23 +611,26 @@ function render(){
     // Parti sayısı yalnız gerçek parti numaralarından (etiket/barkodla sayılanların partisi yok: "—")
     const nl=it.partiler.length,np=new Set(it.partiler.map(L=>L.parti).filter(x=>x&&x!=='—')).size;
     if(np>1){const c=document.createElement('span');c.textContent=np+' parti';meta.append(c)}
-    if(kisi&&adetOf(it)!==it.adet){const c=document.createElement('span');c.className='chip';c.textContent='Toplam '+it.adet;meta.append(c)}
     main.append(nm,meta);
     const tog=()=>{openGtin=openGtin===it.gtin?null:it.gtin;render()};
     main.onclick=tog;main.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();tog()}};
     const qty=document.createElement('div');qty.className='qty';
     const minus=document.createElement('button');minus.type='button';minus.textContent='−';minus.setAttribute('aria-label','Bir azalt');
-    const val=document.createElement('b');val.textContent=adetOf(it);
+    const val=document.createElement('b');val.textContent=it.adet;
     const plus=document.createElement('button');plus.type='button';plus.textContent='+';plus.setAttribute('aria-label','Bir artır');
     minus.disabled=plus.disabled=!ben.ad;
-    minus.onclick=async()=>{try{await apiPost('sil',{gtin:it.gtin,sayim_id:durum.sayim&&durum.sayim.id});yerelUnut(null,it.gtin);durumCek()}catch(e){toast(e.message)}};
+    // − yalnız kişinin kendi kutusunu siler: tek miad/partide ondan, birden çoksa ayrıntıdan seçilir
+    minus.onclick=async()=>{const gr=it.partiler;
+      if(gr.length===1){minus.disabled=true;await grupDuzelt(it,gr[0],'eksi');minus.disabled=false;return}
+      if(gr.length>1){openGtin=it.gtin;render();toast('Birden çok miad var: alttaki tablodan − ile silin');return}
+      try{await apiPost('sil',{gtin:it.gtin,sayim_id:durum.sayim&&durum.sayim.id});yerelUnut(null,it.gtin);durumCek()}catch(e){toast(e.message)}};
     // Karekodsuz üründe + miadıyla birlikte eklenir: tek miad varsa ona, birden çoksa ayrıntıdan seçilir.
     // Yalnız karekodlu üründe (karekodu okunmayan kutu) eskisi gibi düz bir kutu eklenir.
     plus.onclick=async()=>{const gr=it.partiler.filter(L=>!grupKarekodlu(L));
       if(gr.length===1){plus.disabled=true;await grupDuzelt(it,gr[0],'arti');plus.disabled=false;return}
       if(gr.length>1){openGtin=it.gtin;render();toast('Birden çok miad var: alttaki tablodan + ile ekleyin');return}
       const [r]=await okumaEkle([{p:{gtin:it.gtin,raw:ean(it.gtin)},kaynak:'elle'}]);if(r.sonuc==='kuyruk')toast('Bağlantı yok; bağlanınca gönderilecek')};
-    if(kisi)qty.append(val);else qty.append(minus,val,plus);
+    qty.append(minus,val,plus);
     el.append(stripe,main,qty);
     if(openGtin===it.gtin){
       const d=document.createElement('div');d.className='details';
@@ -651,31 +651,17 @@ function render(){
           tr.append(td);tb.append(tr)});
         t.append(tb);w.append(t);d.append(w)}
       const info=document.createElement('p');info.className='hint';
-      const kim=Object.entries(it.kisiler).map(([k,a])=>`${k} ${a}`).join(', ');
-      info.textContent=(it.seri?`${it.seri} farklı seri numarası okundu (karekodlu kutular).`:'Düz barkodla sayıldı; aynı kutuyu iki kez okutmamaya dikkat edin.')+(kim?` Sayanlar: ${kim}.`:'');
+      info.textContent=it.seri?`${it.seri} farklı seri numarası okudunuz (karekodlu kutular).`:'Düz barkodla sayıldı; aynı kutuyu iki kez okutmamaya dikkat edin.';
       d.append(info);el.append(d);
     }
     list.append(el);
   }
 }
-// Sayanlar: Herkes + her kişinin kutu sayısı; dokununca liste o kişiye süzülür. Seçili kişiyi döndürür.
-let kisiSec='';
-function kisilerCiz(items,boxes){
-  const top=new Map();
-  for(const it of items)for(const [k,a] of Object.entries(it.kisiler))top.set(k,(top.get(k)||0)+a);
-  if(!top.has(kisiSec))kisiSec='';
-  const kutu=$('kisiler');kutu.textContent='';$('kisiSatir').hidden=!top.size;
-  const dugme=(k,ad,n)=>{const b=document.createElement('button');b.type='button';b.className='kisi';b.setAttribute('aria-pressed',String(kisiSec===k));
-    const s=document.createElement('b');s.textContent=n;b.append(ad,s);b.onclick=()=>{kisiSec=k;render()};kutu.append(b)};
-  dugme('','Herkes',boxes);
-  [...top].sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0],'tr')).forEach(([k,n])=>dugme(k,k,n));
-  return kisiSec;
-}
 // Grup (parti + miad): durum'daki seri sayısı yoksa (eski Google kodu) karekodlu sayılmaz.
 const grupKarekodlu=L=>(L.seri||0)>=L.adet&&L.adet>0&&L.seri!==undefined;
 async function grupDuzelt(it,L,eylem){
   try{const v=await apiPost('duzelt',{gtin:it.gtin,parti:L.parti,skt:L.skt||'',eylem,sayim_id:durum.sayim&&durum.sayim.id,
-      cihaz:ben.cihaz,...(eylem==='arti'&&ben.ad?{personel:ben.ad}:{})});
+      cihaz:ben.cihaz,...(ben.ad?{personel:ben.ad}:{})});   // yalnız kişinin kendi kutuları
     if(eylem==='eksi')yerelUnut(null,it.gtin);
     toast(v.degisen?`${it.ad||ean(it.gtin)} ${L.skt?fmtExp(L.skt):''}: ${eylem==='arti'?'+1':'−1'}`:'Değişecek kutu kalmamış');durumCek()}
   catch(e){toast(e.ag?'Bağlantı yok; değiştirilemedi':e.message==='bilinmeyen işlem'?'Google\'daki kod eski: Kod.gs güncellenmeli':e.message)}
@@ -701,7 +687,8 @@ function sonucMetni(r,gtin){
   const ad=r.ad||nameOf(gtin)||ean(gtin);
   if(r.sonuc==='eklendi')return ad+' +1';
   if(r.sonuc==='kuyruk')return ad+' +1 · bağlantı yok, bekliyor';
-  if(r.sonuc==='tekrar')return 'Bu kutu zaten sayıldı'+(r.kim?` (${r.kim}, ${fmtSaat(r.zaman)})`:'');
+  // Kimin saydığı telefonda gösterilmez (sayanlar yalnız sayım masasında)
+  if(r.sonuc==='tekrar')return r.kim&&r.kim!==ben.ad?'Bu kutu başka bir telefonda sayıldı':'Bu kutuyu zaten saydınız'+(r.zaman?` (${fmtSaat(r.zaman)})`:'');
   return ad+' · kaydedilemedi';
 }
 
@@ -749,12 +736,13 @@ function siradakiniSor(){
   else if(kaynak==='okuyucu'){$('maAdet').focus();$('maAdet').select()}
 }
 function maHata(m){$('maHata').textContent=m;$('maHata').hidden=!m}
-/* Bu ürünün bu sayımda daha önce sayılanı (bütün telefonlar): başka rafta okutulunca panel
-   önceki adedi gösterir, girilen adet üstüne eklenir. skt YYAAGG; miad ayı (YYYY-AA) karşılaştırılır. */
-function oncekiSayi(gtin,skt){const u=urunMap.get(gtin);if(!u)return {toplam:0,miad:0};
+/* Bu kişinin bu üründen bu sayımda daha önce saydığı (telefonda yalnız kendi sayımı görünür):
+   başka rafta okutulunca panel önceki adedi gösterir, girilen adet üstüne eklenir.
+   skt YYAAGG; miad ayı (YYYY-AA) karşılaştırılır. */
+function oncekiSayi(gtin,skt){const u=urunMap.get(gtin),n=u&&ben.ad?u.kisiler[ben.ad]||0:0;if(!n)return {toplam:0,miad:0};
   const ay=skt?'20'+skt.slice(0,2)+'-'+skt.slice(2,4):null;let miad=0;
-  for(const L of u.partiler)if(ay?(L.skt&&L.skt.slice(0,7)===ay):!L.skt)miad+=L.adet;
-  return {toplam:u.adet,miad}}
+  for(const L of u.partiler)if(ay?(L.skt&&L.skt.slice(0,7)===ay):!L.skt)miad+=(L.kisiler||{})[ben.ad]||0;
+  return {toplam:n,miad}}
 function maOnceCiz(){if(!sorulan)return;
   const m=miadOku($('maMiad').value),skt=m?(sorulan.p.expRaw&&$('maMiad').value===miadYaz(sorulan.p.expRaw)?sorulan.p.expRaw:m.skt):null;
   const o=oncekiSayi(sorulan.p.gtin,skt),adet=Math.floor(Number($('maAdet').value))||0,e=$('maOnce');
