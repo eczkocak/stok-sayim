@@ -102,14 +102,6 @@ input[type=text],input[type=search],select{font:inherit;border:1px solid var(--l
 .confirm{background:var(--bad-soft);color:var(--bad);border-radius:10px;padding:10px 12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:space-between;font-size:.9rem;margin:0}
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(16px + env(safe-area-inset-bottom,0px));background:var(--fg);color:#fff;
   padding:10px 16px;border-radius:10px;font-weight:650;font-size:.9rem;max-width:calc(100% - 32px);z-index:20;box-shadow:0 6px 20px rgba(0,0,0,.25)}
-textarea{width:100%;min-height:140px;font-family:ui-monospace,Consolas,Menlo,monospace;font-size:.78rem;background:var(--surface);color:var(--fg);border:1px solid var(--line);border-radius:10px;padding:8px}
-.txtbox{display:flex;flex-direction:column;gap:8px}
-.gecmis{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:10px;overflow:hidden}
-.gecmis>div{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:8px 10px;border-top:1px solid var(--line);font-size:.85rem}
-.gecmis>div:first-child{border-top:0}
-.gecmis span{flex:1 1 200px;color:var(--muted)}
-.gecmis b{color:var(--fg)}
-.gecmis button{min-height:0;padding:4px 6px;border:0;background:none;color:var(--accent)}
 #liveBtn{width:100%;flex:none}
 #kurulumYok .big{flex:none}
 /* Miad ve adet paneli (karekodsuz ürünler): alttan açılır */
@@ -263,34 +255,16 @@ body.kamerada{overflow:hidden}
   </section>
 
   <section class="panel" aria-label="Araçlar">
-    <div class="label">ÜRÜN LİSTESİ VE DIŞA AKTARMA<span class="ipucu sol" tabindex="0" id="namesInfo" data-ipucu="Ürün isimleri için eczane programından (ör. Tria) barkod ve ürün adı içeren bir CSV dışa aktarıp yükleyin; ayırıcı ; , ya da sekme olabilir. İsimler bütün telefonlarda görünür. Her sayımın Tria karekod listesi (TXT) eczanedeki sunucuda (SNC) da güncel tutulur."></span></div>
+    <div class="label">ÜRÜN LİSTESİ<span class="ipucu sol" tabindex="0" id="namesInfo" data-ipucu="Ürün isimleri için eczane programından (ör. Tria) barkod ve ürün adı içeren bir CSV dışa aktarıp yükleyin; ayırıcı ; , ya da sekme olabilir. İsimler bütün telefonlarda görünür. Sayım dosyaları, sayımlar ve yeni sayım başlatma Sayım Masası'ndadır."></span></div>
     <div class="tools">
       <label class="btn" for="csvIn">Ürün listesi yükle (CSV)<input id="csvIn" type="file" accept=".csv,.txt,text/csv,text/plain"></label>
-      <button type="button" id="txtBtn" class="primary">Tria için karekod listesi (TXT)</button>
-      <button type="button" id="exportBtn">Sayımı CSV indir</button>
-      <button type="button" id="copyBtn">Panoya kopyala</button>
       <button type="button" id="bagBtn">Telefon bağla</button>
-      <button type="button" id="resetBtn" class="danger">Yeni sayım başlat</button>
     </div>
     <div class="bagbox" id="bagBox" hidden>
       <div class="label">TELEFON BAĞLA<span class="ipucu sol" tabindex="0" data-ipucu="Yeni telefonda eczkocak.github.io/stok-sayim adresini açıp 'Kurulum karekodunu okut'a basın ve bu karekodun fotoğrafını çekin. Karekod ve bağlantı Google'a yazma anahtarını içerir; yalnız eczane personeliyle paylaşın."></span></div>
       <div id="bagKod"></div>
       <div class="row"><input id="bagIn" type="text" readonly aria-label="Kurulum bağlantısı" style="flex:1 1 200px"><button type="button" id="bagKopya">Kopyala</button><button type="button" id="bagKapat">Kapat</button></div>
     </div>
-    <div class="confirm" id="resetConfirm" hidden>
-      <span>Bu sayım kapatılsın ve yeni sayım başlasın mı? Kapanan sayım silinmez, aşağıdaki listede kalır. Bütün telefonlar yeni sayıma geçer.</span>
-      <span class="row"><button type="button" id="resetNo">Vazgeç</button><button type="button" id="resetYes" class="primary">Yeni sayım</button></span>
-    </div>
-    <div class="txtbox" id="txtBox" hidden>
-      <div class="row" style="justify-content:space-between"><span class="hint" id="txtInfo"></span>
-        <label class="hint" for="gsOpt" style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="gsOpt"> GS ayırıcıyı koru</label></div>
-      <textarea id="txtOut" readonly aria-label="Karekod listesi"></textarea>
-      <div class="row"><button type="button" id="txtCopy" class="primary" style="flex:1">Tümünü kopyala</button><button type="button" id="txtSave" style="flex:1">TXT dosyası indir</button></div>
-      <p class="hint" id="txtNote"></p>
-    </div>
-    <textarea id="csvOut" hidden readonly aria-label="CSV çıktısı"></textarea>
-    <div class="label">SAYIMLAR</div>
-    <div class="gecmis" id="gecmis"></div>
   </section>
 </div>
 <!-- Canlı kamera: tam ekran. Üstte kapat / başlık / geri al, ortada okuma çerçevesi
@@ -454,17 +428,6 @@ async function okumaGonder(liste){
     kuyruk.push({...k,sayim_id});geriAl.push({istemci_id:k.istemci_id,sayim_id});return {sonuc:'kuyruk',gtin:k.gtin,istemci_id:k.istemci_id}});
   kuyrukKaydet();render();return sonuc;
 }
-function indirDosya(ad,metin,tur){
-  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([metin],{type:tur}));a.download=ad;
-  document.body.append(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},2000);
-}
-async function sayimIndir(s,tur,gs){
-  try{const t=await apiGet(tur,{sayim:s.id,gs:gs?'1':'0'},true);
-    indirDosya(`sayim-${String(s.id).padStart(4,'0')}-${String(s.baslangic||'').slice(0,10)}.${tur}`,t,
-      tur==='txt'?'text/plain;charset=utf-8':'text/csv;charset=utf-8');
-    toast('Dosya indirildi')}
-  catch(e){toast(e.ag?'Bağlantı yok; indirilemedi':e.message)}
-}
 setInterval(()=>{if(!document.hidden)durumCek()},3000);
 setInterval(()=>{if(!document.hidden)kuyrukGonder()},5000);
 
@@ -584,7 +547,6 @@ function render(){
   baglantiCiz();
   const nb=$('namesInfo').querySelector('.balon');
   if(nb)nb.textContent=(durum.urun_adi_sayisi?`${durum.urun_adi_sayisi.toLocaleString('tr-TR')} ürün ismi yüklü. `:'')+$('namesInfo').dataset.ipucu;
-  gecmisCiz();
   $('sessionLine').textContent=durum.sayim?`Sayım #${durum.sayim.id} · başlangıç ${fmtZaman(durum.sayim.baslangic)}`:'';
 
   const q=$('search').value.trim().toLocaleLowerCase('tr-TR');
@@ -665,18 +627,6 @@ async function grupDuzelt(it,L,eylem){
     if(eylem==='eksi')yerelUnut(null,it.gtin);
     toast(v.degisen?`${it.ad||ean(it.gtin)} ${L.skt?fmtExp(L.skt):''}: ${eylem==='arti'?'+1':'−1'}`:'Değişecek kutu kalmamış');durumCek()}
   catch(e){toast(e.ag?'Bağlantı yok; değiştirilemedi':e.message==='bilinmeyen işlem'?'Google\'daki kod eski: Kod.gs güncellenmeli':e.message)}
-}
-function gecmisCiz(){
-  const g=$('gecmis');g.textContent='';
-  for(const s of durum.gecmis){
-    const r=document.createElement('div');const sp=document.createElement('span');
-    const b=document.createElement('b');b.textContent=`#${s.id}`;
-    sp.append(b,` · ${fmtZaman(s.baslangic)}${s.bitis?' – '+fmtZaman(s.bitis):' · açık'} · ${s.kutu} kutu`);
-    const t=document.createElement('button');t.type='button';t.textContent='TXT';t.onclick=()=>sayimIndir(s,'txt');
-    const c=document.createElement('button');c.type='button';c.textContent='CSV';c.onclick=()=>sayimIndir(s,'csv');
-    r.append(sp,t,c);g.append(r);
-  }
-  g.hidden=!durum.gecmis.length;
 }
 
 /* ---------- feedback ---------- */
@@ -1222,38 +1172,6 @@ $('csvIn').addEventListener('change',async e=>{
   catch(err){toast('İsimler yüklenemedi: '+err.message)}
 });
 
-/* ---------- export (Google üretir: Kod.gs txt_, csv_) ---------- */
-async function showTXT(){
-  if(!durum.sayim)return;
-  $('txtBox').hidden=false;
-  let t='';try{t=await apiGet('txt',{sayim:durum.sayim.id,gs:$('gsOpt').checked?'1':'0'},true)}
-  catch(e){toast(e.ag?'Bağlantı yok; liste alınamadı':e.message);return}
-  $('txtOut').value=t;
-  const satirlar=t?t.split('\r\n'):[];
-  $('txtInfo').textContent=`Sayım #${durum.sayim.id} · ${satirlar.length} satır`;
-  // Karekodsuz kutular (barkod, QR etiket) bu listede yok: Sayım Masası'ndan ayrı dosya olarak alınır.
-  const kk=durum.urunler.reduce((t,u)=>t+u.adet-u.seri,0);
-  $('txtNote').textContent=(!satirlar.length?(kk?'Karekodlu kutu yok. ':'Listede henüz okutulmuş kutu yok.'):'')
-    +(kk?`${kk} karekodsuz kutu bu listede yok; Sayım Masası'ndan ayrı alınır.`:'');
-}
-$('txtBtn').onclick=async()=>{await showTXT();$('txtBox').scrollIntoView({behavior:'smooth',block:'nearest'})};
-$('gsOpt').onchange=showTXT;
-$('txtSave').onclick=()=>{if(durum.sayim)sayimIndir(durum.sayim,'txt',$('gsOpt').checked)};
-$('exportBtn').onclick=()=>{if(durum.sayim)sayimIndir(durum.sayim,'csv')};
-$('txtCopy').onclick=()=>{const t=$('txtOut').value;if(!t)return;
-  navigator.clipboard.writeText(t).then(()=>toast('Karekodlar kopyalandı; Tria\'ya yapıştırabilirsiniz'),()=>{$('txtOut').focus();$('txtOut').select();toast('Metin seçildi; kopyala deyin')})};
-$('copyBtn').onclick=async()=>{if(!durum.sayim)return;
-  let csv;try{csv=(await apiGet('csv',{sayim:durum.sayim.id},true)).replace(/^\ufeff/,'').replace(/;/g,'\t')}
-  catch(e){toast(e.ag?'Bağlantı yok; liste alınamadı':e.message);return}
-  const yedek=()=>{const t=$('csvOut');t.hidden=false;t.value=csv;t.focus();t.select();toast('Metni seçip kopyalayın')};
-  if(!navigator.clipboard){yedek();return}
-  navigator.clipboard.writeText(csv).then(()=>toast('Kopyalandı; Excel\'e yapıştırabilirsiniz'),yedek)};
-$('resetBtn').onclick=()=>{$('resetConfirm').hidden=false};
-$('resetNo').onclick=()=>{$('resetConfirm').hidden=true};
-$('resetYes').onclick=async()=>{
-  try{const v=await apiPost('yeni_sayim');geriAl=[];$('resetConfirm').hidden=true;$('preview').hidden=true;$('txtBox').hidden=true;
-    toast(`Sayım #${v.kapanan} kapandı, #${v.sayim_id} başladı`);durumCek()}
-  catch(e){toast(e.ag?'Bağlantı yok; yeni sayım başlatılamadı':e.message)}};
 $('search').addEventListener('input',render);
 $('sort').addEventListener('change',()=>{lsSet('sort',$('sort').value);render()});
 {const s=lsGet('sort');if(s)$('sort').value=s}
