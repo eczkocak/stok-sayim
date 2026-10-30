@@ -154,14 +154,13 @@ tr.ayrinti>td{background:var(--sunk);padding:10px 12px 12px}
     </section>
 
     <section class="panel" aria-label="Dışa aktarma">
-      <div class="label">TXT / EXCEL AL<span class="ipucu" tabindex="0" data-ipucu="Karekod listesi: açık sayımdaki karekodlu kutular, her kutu bir satır (Tria'ya aktarılacak dosya). Barkod listesi: karekodsuz bütün kutular (EAN-13 barkodlu ve QR etiketli), her kutu bir satır; Kopyala ile dosya açmadan panoya alınır. QR etiketli: eczane etiketli ürünler Excel'de; ürün adı, aynı barkodun her miadı ayrı satırda toplam adet. Kişi listesi: kim hangi ilaçtan kaç kutu saydı. Solda bir kişi seçiliyse bütün dosyalar yalnız onun okuttuklarını verir (düğmelerde adı yazar). Dosyalar İndirilenler klasörüne iner."></span></div>
+      <div class="label">TXT / EXCEL AL<span class="ipucu" tabindex="0" data-ipucu="Karekod listesi: açık sayımdaki karekodlu kutular, her kutu bir satır (Tria'ya aktarılacak dosya). Barkod listesi: karekodsuz bütün kutular (EAN-13 barkodlu ve QR etiketli), her kutu bir satır; Kopyala ile dosya açmadan panoya alınır. QR etiketli: eczane etiketli ürünler Excel'de; ürün adı, aynı barkodun her miadı ayrı satırda toplam adet. Solda bir kişi seçiliyse dosyalar yalnız onun okuttuklarını verir (düğmelerde adı yazar; ör. Mete karekod listesi: yalnız Mete'nin okuttuğu karekodlar). Dosyalar İndirilenler klasörüne iner."></span></div>
       <div class="row">
         <button type="button" class="primary" id="txtBtn">Karekod listesi (TXT)</button>
         <label class="secim"><input type="checkbox" id="gsOpt">GS ayırıcı<span class="ipucu" tabindex="0" data-ipucu="Tria karekodları GS (grup ayırıcı) karakteriyle istiyorsa işaretleyin. Bilmiyorsanız işaretlemeyin."></span></label>
         <button type="button" id="barkodTxtBtn">Barkod listesi (TXT)</button>
         <button type="button" id="barkodKopyaBtn">Kopyala</button>
         <button type="button" id="qrXlsxBtn">QR etiketli ürünler (Excel)</button>
-        <button type="button" id="kisiTxtBtn">Kişi listesi (TXT)</button>
         <button type="button" id="csvBtn">Ürün listesi (CSV)</button>
         <span style="flex:1 1 auto"></span>
         <button type="button" id="bagBtn">Telefon bağla</button>
@@ -182,7 +181,7 @@ tr.ayrinti>td{background:var(--sunk);padding:10px 12px 12px}
 
     <div class="duzen">
       <section class="panel" aria-label="Sayanlar">
-        <div class="label">SAYANLAR<span class="ipucu" tabindex="0" data-ipucu="Bütün telefonlardan okutulanlar. Bir kişiye tıklayın: sağdaki liste ve Kişi listesi (TXT) yalnız onu gösterir. Herkes: hepsi."></span></div>
+        <div class="label">SAYANLAR<span class="ipucu" tabindex="0" data-ipucu="Bütün telefonlardan okutulanlar. Bir kişiye tıklayın: sağdaki liste ve üstteki dosyalar (karekod, barkod, QR) yalnız onun. Herkes: hepsi."></span></div>
         <table class="kisiler">
           <thead><tr><th>KİŞİ</th><th class="s">ÇEŞİT</th><th class="s">KUTU</th></tr></thead>
           <tbody id="kisiGovde"></tbody>
@@ -360,10 +359,11 @@ function listeCiz(){
   $('sayimSatir').textContent=s?`Sayım #${s.id} · başlangıç ${fmtZaman(s.baslangic)}`:'Sayım masası';
   $('secBant').hidden=!secili;
   if(secili)$('secMetin').textContent=`Sayım #${s.id} gösteriliyor · ${fmtZaman(s.baslangic)} – ${s.bitis?fmtZaman(s.bitis):'açık'}`;
-  $('kisiTxtBtn').textContent=kisiSec?`${kisiSec} listesi (TXT)`:'Kişi listesi (TXT)';
-  // Kişi seçiliyken karekod, barkod ve QR dosyaları yalnız onun kutuları
-  const ks=kisiSec?` · ${kisiSec}`:'';
-  $('txtBtn').textContent='Karekod listesi (TXT)'+ks;$('barkodTxtBtn').textContent='Barkod listesi (TXT)'+ks;$('qrXlsxBtn').textContent='QR etiketli ürünler (Excel)'+ks;
+  // Kişi seçiliyken karekod, barkod ve QR dosyaları yalnız onun kutuları ("Mete karekod listesi")
+  const ks=kisiSec?kisiSec+' ':'';
+  $('txtBtn').textContent=ks?`${ks}karekod listesi (TXT)`:'Karekod listesi (TXT)';
+  $('barkodTxtBtn').textContent=ks?`${ks}barkod listesi (TXT)`:'Barkod listesi (TXT)';
+  $('qrXlsxBtn').textContent=ks?`${ks}QR etiketli (Excel)`:'QR etiketli ürünler (Excel)';
   $('temizleBtn').textContent=kisiSec?`Okumalarını temizle (${kisiSec})`:'Listeyi temizle';
   $('temizleBtn').hidden=!V.urunler.length;
 
@@ -511,23 +511,6 @@ $('temizleHayir').onclick=()=>{$('temizleOnay').hidden=true;bekleyen=null};
 $('temizleEvet').onclick=async()=>{if(!bekleyen)return;const b=bekleyen;bekleyen=null;
   $('temizleEvet').disabled=true;await temizle(b.g,b.ne);$('temizleEvet').disabled=false;$('temizleOnay').hidden=true};
 
-/* Kişi listesi: Not Defteri'nde düzgün okunsun diye sabit genişlikli sütunlar. */
-function kisiListesiMetni(){
-  const V=gorunen(),s=V.sayim,kisiler=kisiTablosu(),satirlar=[];
-  const sag=(v,n)=>String(v).padStart(n),sol=(v,n)=>{v=String(v);return v.length>n?v.slice(0,n-1)+'…':v.padEnd(n)};
-  satirlar.push(`STOK SAYIM #${s.id} - KİŞİ BAZINDA LİSTE`,
-    `Başlangıç: ${fmtZaman(s.baslangic)}    Alındı: ${new Date().toLocaleString('tr-TR',{dateStyle:'medium',timeStyle:'short'})}`,'');
-  for(const [k,t] of kisiler){
-    if(kisiSec&&k!==kisiSec)continue;
-    satirlar.push(`${k.toLocaleUpperCase('tr-TR')}  (${t.cesit} çeşit, ${t.kutu} kutu)`,
-      `  ${sol('BARKOD',15)} ${sol('İLAÇ',42)} ${sag('ADET',5)}`);
-    for(const {u,adet} of t.urunler)satirlar.push(`  ${sol(ean(u.gtin),15)} ${sol(adOf(u),42)} ${sag(adet,5)}`);
-    satirlar.push('');
-  }
-  if(!kisiSec)satirlar.push(`TOPLAM: ${V.urunler.length} çeşit, ${V.urunler.reduce((t,u)=>t+u.adet,0)} kutu`);
-  return '﻿'+satirlar.join('\r\n')+'\r\n';
-}
-
 /* ---------- düğmeler ---------- */
 // Dosyalar gösterilen sayımın (açık ya da aşağıdan seçilen)
 const gs=()=>gorunen().sayim;
@@ -537,11 +520,6 @@ $('barkodTxtBtn').onclick=()=>{if(gs())karekodsuzIndir(gs(),'barkod',kisiSec)};
 $('barkodKopyaBtn').onclick=()=>{if(gs())karekodsuzIndir(gs(),'kopya',kisiSec)};
 $('qrXlsxBtn').onclick=()=>{if(gs())karekodsuzIndir(gs(),'qr',kisiSec)};
 $('acigaDon').onclick=()=>{secili=null;acikUrun=null;ciz()};
-$('kisiTxtBtn').onclick=()=>{const s=gs();if(!s)return;
-  if(!gorunen().urunler.length){toast('Bu sayımda kutu yok');return}
-  const ek=kisiSec?kisiSec.toLocaleLowerCase('tr-TR').replace(/[^\p{L}\p{N}]+/gu,'-'):'kisiler';
-  indirDosya(`sayim-${sayimNo(s)}-${dosyaTarih(s)}-${ek}.txt`,kisiListesiMetni(),'text/plain;charset=utf-8');
-  toast(kisiSec?`${kisiSec} listesi indirildi`:'Kişi listesi indirildi')};
 document.querySelectorAll('.sekme button').forEach(b=>b.onclick=()=>{gorunum=b.dataset.gorunum;lsSet('masa-gorunum',gorunum);ciz()});
 $('ara').addEventListener('input',ciz);
 $('bagBtn').onclick=()=>{
