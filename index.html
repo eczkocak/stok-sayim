@@ -847,13 +847,27 @@ async function detectWasm(imgData,scale){
   return r.filter(b=>b.isValid&&b.text).map(b=>{const p=b.position,pts=[p.topLeft,p.topRight,p.bottomRight,p.bottomLeft];
     const cx=pts.reduce((a,q)=>a+q.x,0)/4,cy=pts.reduce((a,q)=>a+q.y,0)/4;
     const rr=Math.max(...pts.map(q=>Math.hypot(q.x-cx,q.y-cy)));
-    return {text:b.text,x:cx/scale,y:cy/scale,r:Math.max(10,rr/scale)}})}
+    return {text:b.text,x:cx/scale,y:cy/scale,r:Math.max(10,rr/scale),pts:pts.map(q=>({x:q.x/scale,y:q.y/scale}))}})}
+// Telefonun okuyucusu: köşe noktaları varsa onlar, yoksa çevreleyen dikdörtgen
+function yerelSonuc(b){const k=b.cornerPoints&&b.cornerPoints.length===4?b.cornerPoints.map(q=>({x:q.x,y:q.y})):null,bb=b.boundingBox;
+  return {text:b.rawValue,x:bb.x+bb.width/2,y:bb.y+bb.height/2,r:Math.max(bb.width,bb.height)/2,
+    pts:k||[{x:bb.x,y:bb.y},{x:bb.x+bb.width,y:bb.y},{x:bb.x+bb.width,y:bb.y+bb.height},{x:bb.x,y:bb.y+bb.height}]}}
+/* Okunan kodun işareti: karekodun köşelerinden (kod eğikse eğik) biraz geniş kare; köşesi
+   bilinmeyen (tekli okuyucu) kodda ortasına kare. olcek: çizilen tuvalin ölçeği. */
+function kodKaresi(ctx,f,olcek=1,pay=0.15){
+  let p=f.pts;
+  if(!p||p.length<4){const h=Math.max(12,f.r*0.72);p=[{x:f.x-h,y:f.y-h},{x:f.x+h,y:f.y-h},{x:f.x+h,y:f.y+h},{x:f.x-h,y:f.y+h}]}
+  const cx=p.reduce((a,q)=>a+q.x,0)/4,cy=p.reduce((a,q)=>a+q.y,0)/4;
+  ctx.beginPath();
+  p.forEach((q,i)=>{const x=(cx+(q.x-cx)*(1+pay))*olcek,y=(cy+(q.y-cy)*(1+pay))*olcek;if(i)ctx.lineTo(x,y);else ctx.moveTo(x,y)});
+  ctx.closePath();
+}
 async function detectNative(canvas){
   if(!('BarcodeDetector' in window))return null;
   try{const want=['data_matrix','ean_13','ean_8','qr_code','code_128','upc_a'];const sup=await BarcodeDetector.getSupportedFormats();
     const fm=want.filter(f=>sup.includes(f));if(!fm.includes('data_matrix'))return null;
     const det=new BarcodeDetector({formats:fm});const r=await det.detect(canvas);
-    return r.map(b=>({text:b.rawValue,x:b.boundingBox.x+b.boundingBox.width/2,y:b.boundingBox.y+b.boundingBox.height/2,r:Math.max(b.boundingBox.width,b.boundingBox.height)/2}))}
+    return r.map(yerelSonuc)}
   catch(e){return null}
 }
 async function detectZXing(canvas){
@@ -942,9 +956,8 @@ async function handlePhoto(file){
     let r='bad';
     if(x.sor)r='sor';else if(x.gec)r='gec';
     else if(x.r){const s=x.r.sonuc;if(s==='eklendi'||s==='kuyruk'){r='added';added++;if(s==='kuyruk')bekleyen++}else if(s==='tekrar'){r='dup';dup++}else bad++}else bad++;
-    const f=x.f,cx=f.x*vs,cy=f.y*vs,rad=Math.max(10,f.r*vs*1.15);
-    sctx.lineWidth=Math.max(3,shot.width/260);sctx.strokeStyle=col[r];sctx.beginPath();sctx.arc(cx,cy,rad,0,Math.PI*2);sctx.stroke();
-    sctx.fillStyle=col[r];sctx.beginPath();sctx.arc(cx,cy,Math.max(4,rad/5),0,Math.PI*2);sctx.fill();
+    const f=x.f;
+    sctx.lineWidth=Math.max(3,shot.width/260);sctx.lineJoin='round';sctx.strokeStyle=col[r];kodKaresi(sctx,f,vs);sctx.stroke();
   }
   const chips=$('shotChips');
   const mk=(t,c)=>{const s=document.createElement('span');s.className='chip '+c;s.textContent=t;chips.append(s)};
@@ -1058,12 +1071,12 @@ async function detectFrame(v){
       for(const gi of canliGecisler(n>>1)){const g=GECISLER[gi],al=g.odak?odak:alan;
         // Odak geçişi küçültülmüş kareden değil videonun kendisinden alınır (yüksek çözünürlükte gerçek ayrıntı).
         const img=g.odak?gecisGoruntusu(v,g,al,1/sc):gecisGoruntusu(fc,g,al);
-        const bulunan=(await detectWasm(img,g.o)).map(f=>({...f,x:(al.x+f.x)/sc,y:(al.y+f.y)/sc,r:f.r/sc}));
+        const bulunan=(await detectWasm(img,g.o)).map(f=>({...f,x:(al.x+f.x)/sc,y:(al.y+f.y)/sc,r:f.r/sc,pts:f.pts.map(q=>({x:(al.x+q.x)/sc,y:(al.y+q.y)/sc}))}));
         if(bulunan.length){if(gi!==iyiGecis){iyiGecis=gi;lsSet('gecis2',String(gi))}return bulunan}}
       return [];
     }catch(e){useWasm=false}}
   if(det){try{let kaynak=v;if(n%2){rc.width=vw;rc.height=vh;rctx.drawImage(v,0,0);kaynak=evirYerinde(rc)}
-    const r=await det.detect(kaynak);return r.map(b=>({text:b.rawValue,x:b.boundingBox.x+b.boundingBox.width/2,y:b.boundingBox.y+b.boundingBox.height/2,r:Math.max(b.boundingBox.width,b.boundingBox.height)/2}))}catch(e){return []}}
+    const r=await det.detect(kaynak);return r.map(yerelSonuc)}catch(e){return []}}
   if(!zr)return [];
   const Z=window.ZXing;
   // each frame tries one region in turn: whole frame, centre, then overlapping quarters
@@ -1090,7 +1103,8 @@ function drawMarks(v){
     // Odak karesi: küçük/uzaktaki kod buraya tutulunca büyütülerek okunur
     const o=odakAlani(c);ctx.strokeStyle='rgba(255,255,255,.6)';ctx.lineWidth=2/c.s;ctx.setLineDash([10/c.s,8/c.s]);ctx.strokeRect(o.x,o.y,o.w,o.h);ctx.restore()}
   const css=getComputedStyle(document.documentElement);const col={added:css.getPropertyValue('--ok').trim(),dup:css.getPropertyValue('--warn').trim(),bad:css.getPropertyValue('--bad').trim(),sor:css.getPropertyValue('--accent').trim(),gec:'#8C8384'};
-  for(const m of marks){ctx.lineWidth=Math.max(4,ov.width/180);ctx.strokeStyle=col[m.s]||'#fff';ctx.beginPath();ctx.arc(m.x,m.y,Math.max(24,m.r*1.2),0,Math.PI*2);ctx.stroke()}
+  ctx.lineJoin='round';
+  for(const m of marks){ctx.lineWidth=Math.max(4,ov.width/180);ctx.strokeStyle=col[m.s]||'#fff';kodKaresi(ctx,m);ctx.stroke()}
 }
 /* Karekodsuz bir kodu (barkod / QR etiket) panelle sormadan önce kısa süre beklenir: aynı
    kutunun karekodu bu arada okunursa barkod sayılmaz (karekodlu kutularda ikisi birden var).
@@ -1132,7 +1146,7 @@ function handleFound(found){
             if(r.sonuc==='tekrar'){liveDup++;statusOf.set(f.text,'dup')}else{yerelSayilan.delete(anahtar);statusOf.set(f.text,'bad')}
             beep(false);$('liveLast').textContent=sonucMetni(r,p.gtin);toast(sonucMetni(r,p.gtin));kamSayacCiz()})}}
     }
-    marks.push({x:f.x,y:f.y,r:f.r,s:statusOf.get(f.text),t:now});
+    marks.push({x:f.x,y:f.y,r:f.r,pts:f.pts,s:statusOf.get(f.text),t:now});
   }
 }
 async function loop(){
