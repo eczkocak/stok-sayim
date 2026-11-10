@@ -790,8 +790,13 @@ const ZOPT={formats:['DataMatrix','EAN-13','EAN-8','QRCode','Code128'],tryHarder
    büyütme değil gerçek ayrıntı). */
 // Sıra numaraları telefonda hatırlanır (gecis2): yeni geçiş sona eklenir.
 // kucukFoto: yalnız küçük fotoğrafta (WhatsApp'tan gelen gibi) 1,5 kat büyütme; eğik QR etiketleri okur.
+// g: orta tonları koyulaştırma (gama; siyah zeminli kodlar, aşağıda siyahAdaylar).
 const GECISLER=[{o:1,r:0},{o:1,r:1},{o:0.75,r:2},{o:0.55,r:1},{o:0.4,r:2},{o:0.28,r:3},{o:0.2,r:2},{o:0.4,r:0},
-  {o:0.75,r:1},{o:0.4,r:1},{o:2,r:1,odak:1},{o:2,r:0,odak:1},{o:1.5,r:0,kucukFoto:1}];
+  {o:0.75,r:1},{o:0.4,r:1},{o:2,r:1,odak:1},{o:2,r:0,odak:1},{o:1.5,r:0,kucukFoto:1},{o:1,r:0,g:2.5}];
+const GAMA=new Map();
+function gamaUygula(veri,gam){let L=GAMA.get(gam);
+  if(!L){L=new Uint8ClampedArray(256);for(let i=0;i<256;i++)L[i]=255*Math.pow(i/255,gam);GAMA.set(gam,L)}
+  const d=veri.data;for(let i=0;i<d.length;i+=4){d[i]=L[d[i]];d[i+1]=L[d[i+1]];d[i+2]=L[d[i+2]]}return veri}
 function yumusat(src,r){
   const w=src.width,h=src.height,s=src.data,nn=(2*r+1)*(2*r+1),g=new Uint8ClampedArray(w*h),t=new Uint16Array(w*h);
   for(let i=0,j=0;i<g.length;i++,j+=4)g[i]=(s[j]*77+s[j+1]*150+s[j+2]*29)>>8;
@@ -812,7 +817,66 @@ function gecisGoruntusu(kaynak,g,alan,k=1){
   if(g.o===1&&k===1&&kaynak.getContext)veri=kaynak.getContext('2d').getImageData(a.x,a.y,a.w,a.h);
   else{gc.width=Math.max(1,Math.round(a.w*g.o));gc.height=Math.max(1,Math.round(a.h*g.o));
     gctx.drawImage(kaynak,a.x*k,a.y*k,a.w*k,a.h*k,0,0,gc.width,gc.height);veri=gctx.getImageData(0,0,gc.width,gc.height)}
+  if(g.g)gamaUygula(veri,g.g);
   return g.r?yumusat(veri,g.r):veri;
+}
+/* Siyah zeminli (beyaz basılmış) karekodlar, 10.11.2026: rafta beyaz noktalar kamerada birbirine
+   taşıyor, kod beyaz bir lekeye dönüp siyah modüller kayboluyor; orta tonları koyulaştırmak
+   (gama) bunu düzeltiyor. Rafta ~60 px'lik kodlar bütün karede yine okunmuyor: siyah kutu
+   üstündeki beyaz kareler bulunur, her biri kesilip büyütülerek gama ile tek tek okunur.
+   ESS'nin okuduğu raf (WhatsApp fotoğrafı, 6 siyah kutu, kod ~60 px): eski geçişler 0, kesip
+   okuma 6/6; canlıda (deneme/sahte_kamera.js) görünen 7 kodun 7'si yarım saniyede (eskisi 10
+   sn'de 3). 16 siyah kutulu raf: 1 → 12; okunmayanlar modül başına 2 px'ten az (çok uzak).
+   Deneme düzeneği: deneme/siyah.html.
+   Aday: görüntü ~480 px'e küçültülür, parlak pikseller bağlı parçalara ayrılır; kareye yakın,
+   içi dolu, çevresi koyu olanlar alınır. Döner: kaynak koordinatında merkez ve kenar (s). */
+const adc=document.createElement('canvas'),adctx=adc.getContext('2d',{willReadFrequently:true});
+function siyahAdaylar(kaynak,alan,boy=480){
+  const a=alan||{x:0,y:0,w:kaynak.width,h:kaynak.height},k=Math.max(1,Math.max(a.w,a.h)/boy);
+  const w=Math.max(1,Math.round(a.w/k)),h=Math.max(1,Math.round(a.h/k));adc.width=w;adc.height=h;
+  adctx.drawImage(kaynak,a.x,a.y,a.w,a.h,0,0,w,h);
+  const s=adctx.getImageData(0,0,w,h).data,g=new Uint8Array(w*h),hist=new Uint32Array(256);
+  for(let i=0,j=0;i<g.length;i++,j+=4){g[i]=(s[j]*77+s[j+1]*150+s[j+2]*29)>>8;hist[g[i]]++}
+  // Eşik en parlak %5'e göre (loş ışıkta da beyaz baskı ayrılsın)
+  let say=0,p95=255;for(let v=255;v>=0;v--){say+=hist[v];if(say>=g.length*0.05){p95=v;break}}
+  const esik=Math.min(120,Math.max(60,p95*0.55)),lab=new Uint8Array(w*h),yig=new Int32Array(w*h),out=[];
+  for(let i=0;i<g.length;i++){if(g[i]<=esik||lab[i])continue;
+    let sp=0,n=0,x0=w,x1=0,y0=h,y1=0;yig[sp++]=i;lab[i]=1;
+    while(sp){const p=yig[--sp],x=p%w,y=(p-x)/w;n++;if(x<x0)x0=x;if(x>x1)x1=x;if(y<y0)y0=y;if(y>y1)y1=y;
+      if(x>0&&!lab[p-1]&&g[p-1]>esik){lab[p-1]=1;yig[sp++]=p-1}
+      if(x<w-1&&!lab[p+1]&&g[p+1]>esik){lab[p+1]=1;yig[sp++]=p+1}
+      if(y>0&&!lab[p-w]&&g[p-w]>esik){lab[p-w]=1;yig[sp++]=p-w}
+      if(y<h-1&&!lab[p+w]&&g[p+w]>esik){lab[p+w]=1;yig[sp++]=p+w}}
+    // ~40 px'ten küçük kod okunmaz; eleme yazıdaki harfleri de dışarıda bırakır
+    const bw=x1-x0+1,bh=y1-y0+1,enAz=Math.max(6,40/k);
+    if(bw<enAz||bh<enAz||bw>w/2||bh>h/2||bw/bh<0.6||bw/bh>1.6||n/(bw*bh)<0.45)continue;
+    // Çevresindeki halka koyu olmalı (siyah kutu)
+    const m=Math.max(2,Math.round(Math.max(bw,bh)*0.25));let t=0,c=0;
+    for(let x=x0-m;x<=x1+m;x++)for(const y of [y0-m,y1+m])if(x>=0&&y>=0&&x<w&&y<h){t+=g[y*w+x];c++}
+    for(let y=y0-m;y<=y1+m;y++)for(const x of [x0-m,x1+m])if(x>=0&&y>=0&&x<w&&y<h){t+=g[y*w+x];c++}
+    if(!c||t/c>esik*0.8)continue;
+    out.push({x:a.x+(x0+bw/2)*k,y:a.y+(y0+bh/2)*k,s:Math.max(bw,bh)*k})}
+  return out;
+}
+/* Adayı kesip okur. k: kaynak pikseli / aday koordinatı (canlıda video küçültülmüş kareden
+   büyük). Gama 2,5; tur 0: kod ~190 px, yerel eşik; tur 1: ~100 px, bütün kesite tek eşik.
+   İki raf fotoğrafındaki 139 adayda (40 ayar denendi) ikisi birlikte okunabilen 21 kodun
+   hepsini okuyor. Döner: aday koordinatında sonuç ya da null. */
+const kc=document.createElement('canvas'),kctx=kc.getContext('2d',{willReadFrequently:true});
+const SIYAH_OPT={...ZOPT,formats:['DataMatrix'],maxNumberOfSymbols:1};
+async function adayOku(kaynak,d,k=1,tur=0){
+  const sc=Math.max(0.5,Math.min(4,(tur?100:190)/d.s)),K=d.s*1.8,x0=d.x-K/2,y0=d.y-K/2;
+  const KW=kaynak.videoWidth||kaynak.width,KH=kaynak.videoHeight||kaynak.height;
+  kc.width=kc.height=Math.max(8,Math.round(K*sc));kctx.fillStyle='#000';kctx.fillRect(0,0,kc.width,kc.height);
+  // Kaynağın dışına taşan kısım siyah kalır (eski Safari taşan kaynak dikdörtgenini hiç çizmiyor)
+  const sx=Math.max(0,x0*k),sy=Math.max(0,y0*k),ex=Math.min(KW,(x0+K)*k),ey=Math.min(KH,(y0+K)*k);
+  if(ex-sx<4||ey-sy<4)return null;
+  kctx.imageSmoothingEnabled=true;kctx.imageSmoothingQuality='high';
+  kctx.drawImage(kaynak,sx,sy,ex-sx,ey-sy,(sx/k-x0)*sc,(sy/k-y0)*sc,(ex-sx)/k*sc,(ey-sy)/k*sc);
+  const veri=gamaUygula(kctx.getImageData(0,0,kc.width,kc.height),2.5);
+  const r=await detectWasm(veri,sc,{...SIYAH_OPT,binarizer:tur?'GlobalHistogram':'LocalAverage'});
+  if(!r.length)return null;
+  const f=r[0];return {...f,x:x0+f.x,y:y0+f.y,pts:f.pts.map(q=>({x:x0+q.x,y:y0+q.y}))};
 }
 // Odak: okuma çerçevesinin ortasındaki kare (kısa kenarının yarısı); küçük/uzak kod buraya tutulur.
 function odakAlani(c){const k=Math.round(Math.min(c.w,c.h)/2);return {x:Math.round(c.x+(c.w-k)/2),y:Math.round(c.y+(c.h-k)/2),w:k,h:k}}
@@ -820,8 +884,9 @@ function odakAlani(c){const k=Math.round(Math.min(c.w,c.h)/2);return {x:Math.rou
    tutulur); ilk okuyanda durulur, okutan geçiş hatırlanır ve önce o denenir. İki sıra
    karede bir değişir; ikisi birlikte 80-800 px'lik kodları kapsar (bilgisayarda kare başı
    en çok ~170-210 ms). Çok yakındaki (kareyi dolduran) kod için ucuz 0,28 geçişi dört
-   karede bir eklenir. */
-const CANLI_SIRA=[[10,8,9],[11,1,4]];
+   karede bir eklenir. Gama (13) ikisinde de önce: bütün kareye uygulanınca gölgedeki QR
+   etiketlerini bozuyor (8 → 2), bu yüzden ham kare yerine değil, burada. */
+const CANLI_SIRA=[[13,10,8,9],[13,11,1,4]];
 /* Okuma çerçevesi (video koordinatlarında): ekran video'yu object-fit:cover ile kırptığı için
    önce görünen bölüm bulunur, sonra üst/alt şeritlerin arasında kalan kısım biraz içeriden
    alınır. Yumuşatılmış geçişler yalnız burada denenir; çerçeve de buraya çizilir. */
@@ -842,8 +907,8 @@ function canliGecisler(k){
 function evirYerinde(c){const x=c.getContext('2d'),d=x.getImageData(0,0,c.width,c.height),a=d.data;
   for(let i=0;i<a.length;i+=4){a[i]=255-a[i];a[i+1]=255-a[i+1];a[i+2]=255-a[i+2]}x.putImageData(d,0,0);return c}
 function evir(c){const t=document.createElement('canvas');t.width=c.width;t.height=c.height;t.getContext('2d').drawImage(c,0,0);return evirYerinde(t)}
-async function detectWasm(imgData,scale){
-  const r=await window.ZXingWASM.readBarcodes(imgData,ZOPT);
+async function detectWasm(imgData,scale,opt=ZOPT){
+  const r=await window.ZXingWASM.readBarcodes(imgData,opt);
   return r.filter(b=>b.isValid&&b.text).map(b=>{const p=b.position,pts=[p.topLeft,p.topRight,p.bottomRight,p.bottomLeft];
     const cx=pts.reduce((a,q)=>a+q.x,0)/4,cy=pts.reduce((a,q)=>a+q.y,0)/4;
     const rr=Math.max(...pts.map(q=>Math.hypot(q.x-cx,q.y-cy)));
@@ -917,11 +982,16 @@ async function kodlariBul(work){
   let found=[];
   if(await wasmReady()){
     const boy=Math.max(work.width,work.height),buyuk=boy>2600;
-    for(let i=0;i<GECISLER.length;i++){const g=GECISLER[i];setProg((i+1)/(GECISLER.length+1));
+    for(let i=0;i<GECISLER.length;i++){let g=GECISLER[i];setProg((i+1)/(GECISLER.length+2));
       // Odak yalnız canlı kamerada; büyük fotoğrafta tam boy yumuşatma pahalı, 0,75 ölçek aynı işi görür.
       if(g.odak||(buyuk&&g.o===1&&g.r)||(g.kucukFoto&&boy>2000))continue;
+      if(buyuk&&g.g)g={...g,o:0.6};   // siyah zeminli kodları büyük fotoğrafta asıl adaylar okur
       try{found=found.concat(await detectWasm(gecisGoruntusu(work,g),g.o))}catch(e){}
       await tick()}
+    // Siyah zeminli kodlar: okunmamış her beyaz kare kesilip tam çözünürlükte okunur
+    try{for(const d of siyahAdaylar(work,null,800)){
+      if(found.some(f=>Math.hypot(f.x-d.x,f.y-d.y)<Math.max(f.r,d.s/2)))continue;
+      for(const tur of [0,1]){const f=await adayOku(work,d,1,tur);if(f){found.push(f);break}}}}catch(e){}
   }
   if(!found.length)found=await detectNative(work)||[];
   if(!found.length)found=await detectNative(evir(work))||[];
@@ -1068,6 +1138,9 @@ async function detectFrame(v){
     try{
       if(n%2===0)return await detectWasm(fctx.getImageData(0,0,fc.width,fc.height),sc);
       const c=cerceve(v),alan={x:Math.round(c.x*sc),y:Math.round(c.y*sc),w:Math.round(c.w*sc),h:Math.round(c.h*sc)},odak=odakAlani(alan);
+      // Tek karelerin üçte ikisinde siyah kutu üstündeki beyaz kareler tek tek (videonun kendi
+      // çözünürlüğünden kesilir); aday yoksa eski geçişler.
+      if((n>>1)%3!==2){const b=await siyahKareler(v,alan,sc,n>>1);if(b)return b}
       for(const gi of canliGecisler(n>>1)){const g=GECISLER[gi],al=g.odak?odak:alan;
         // Odak geçişi küçültülmüş kareden değil videonun kendisinden alınır (yüksek çözünürlükte gerçek ayrıntı).
         const img=g.odak?gecisGoruntusu(v,g,al,1/sc):gecisGoruntusu(fc,g,al);
@@ -1092,9 +1165,21 @@ async function detectFrame(v){
     return [{text:res.getText(),x:sx+cx,y:sy+cy,r:rr}]}
   catch(e){return []}finally{try{zr.reset()}catch(e){}}
 }
+/* Canlıda kare başına en çok 8 aday okunur, okuma çerçevesinin ortasına yakın olanlar önce;
+   daha çoksa sıra her karede kayar. Adaylar bütün karede aranır: ekranın kenarındaki kod da
+   görünüyor (ESS'de olduğu gibi raftaki kutu sırası ekranın bir yanında kalabiliyor).
+   tur: iki okuma ayarı karede bir değişir. */
+async function siyahKareler(v,alan,sc,tur){
+  const ad=siyahAdaylar(fc);if(!ad.length)return null;
+  const mx=alan.x+alan.w/2,my=alan.y+alan.h/2;ad.sort((a,b)=>Math.hypot(a.x-mx,a.y-my)-Math.hypot(b.x-mx,b.y-my));
+  const N=8,bas=ad.length>N?(tur*N)%ad.length:0,out=[];
+  for(let i=0;i<Math.min(N,ad.length);i++){const f=await adayOku(v,ad[(bas+i)%ad.length],1/sc,tur%2);
+    if(f)out.push({...f,x:f.x/sc,y:f.y/sc,r:f.r/sc,pts:f.pts.map(q=>({x:q.x/sc,y:q.y/sc}))})}
+  return out.length?out:null;
+}
 function drawMarks(v){
   const ov=$('ov');if(ov.width!==v.videoWidth||ov.height!==v.videoHeight){ov.width=v.videoWidth;ov.height=v.videoHeight}
-  const ctx=ov.getContext('2d');ctx.clearRect(0,0,ov.width,ov.height);const now=Date.now();marks=marks.filter(m=>now-m.t<700);
+  const ctx=ov.getContext('2d');ctx.clearRect(0,0,ov.width,ov.height);const now=Date.now();marks=marks.filter(m=>now-m.t<1000);
   // Okuma çerçevesi: köşe çizgileri (siyah zeminli/nokta baskılı karekodlar bunun içinde daha hızlı okunur)
   {const c=cerceve(v),u=Math.min(c.w,c.h)*0.12,lw=4/c.s;ctx.save();ctx.strokeStyle=getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()||'#A5121B';
     ctx.lineWidth=lw;ctx.lineCap='round';ctx.beginPath();
