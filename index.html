@@ -333,6 +333,12 @@ function kurulumBaglantisi(){
 }
 let durum={rev:'',sayim:null,urunler:[],gecmis:[],urun_adi_sayisi:0};
 let urunMap=new Map();
+/* Google telefona yalnız bu kişinin ürünlerini gönderir (sayım günü herkesinki yüzlerce KB);
+   herkesin karekodlu ürün listesi (karekodluMu) değişince ayrıca, ürün adları bir kez gelir
+   ve telefonda saklanır. ekBekleyen: Google'a yazılmış ama listede henüz görünmeyen kutular
+   (liste birkaç saniyede bir hesaplanır; sayaç beklemesin). */
+let kkSet=new Set(),adTablo={},adSurum=lsGet('adsurum')||'',ekBekleyen=[];
+try{adTablo=JSON.parse(lsGet('adlar')||'{}')}catch(e){}
 const ben={ad:lsGet('personel')||'',cihaz:lsGet('cihaz')||''};
 if(!ben.cihaz){ben.cihaz=uid();lsSet('cihaz',ben.cihaz)}
 let kuyruk=[];try{kuyruk=JSON.parse(lsGet('kuyruk')||'[]')}catch(e){}
@@ -365,14 +371,28 @@ async function durumCek(){
   if(!ayar.url)return;
   if(cekiliyor){yineCek=true;return}
   cekiliyor=true;
-  try{const v=await apiGet('durum',{rev:durum.rev});
+  try{const p={rev:durum.rev};if(ben.ad){p.kisi=ben.ad;p.kk=String(kkSet.size)}
+    const v=await apiGet('durum',p);
     if(v.degisti){durum=v;urunMap=new Map(v.urunler.map(u=>[u.gtin,u]));
+      if(v.karekodlu)kkSet=new Set(v.karekodlu);
+      const r=Number(v.rev);ekBekleyen=isNaN(r)?[]:ekBekleyen.filter(e=>e.rev>r);
+      if(v.ad_surum!=null&&v.ad_surum!==adSurum)adlarCek();
       // Yeni sayıma geçildiyse (bu ya da başka telefon) telefonun "sayıldı" hafızası boşalır
       if(v.sayim){if(yerelSayim!==null&&yerelSayim!==v.sayim.id)yerelSayilan.clear();yerelSayim=v.sayim.id}
       render()}}
   catch(e){}
   finally{cekiliyor=false;if(yineCek){yineCek=false;durumCek()}}
 }
+let adCekiliyor=false;
+async function adlarCek(){
+  if(adCekiliyor)return;adCekiliyor=true;
+  try{const v=await apiGet('adlar',{surum:adSurum});
+    if(v.degisti&&v.adlar){adTablo=v.adlar;adSurum=v.surum;lsSet('adlar',JSON.stringify(adTablo));lsSet('adsurum',adSurum);render()}}
+  catch(e){}
+  finally{adCekiliyor=false}
+}
+/** Yazılan okumalar: listede görünene kadar sayaca eklenir. */
+function ekKaydet(v,sonuclar){const n=sonuclar.filter(s=>s.sonuc==='eklendi').length,r=Number(v&&v.rev);if(n&&!isNaN(r))ekBekleyen.push({rev:r,n})}
 function kayit(p,kaynak){return {istemci_id:uid(),gtin:p.gtin,seri:p.serial||null,parti:p.lot||null,skt:p.expRaw||null,
   ham:String(p.raw||p.gtin).slice(0,200),kaynak,personel:ben.ad,cihaz:ben.cihaz}}
 let gonderim=null;
@@ -388,7 +408,7 @@ function kuyrukGonder(){
         try{v=await apiPost('okuma',{sayim_id:sid,okumalar:parca.map(({sayim_id,...k})=>k)})}
         catch(e){if(e.ag)return;
           kuyruk.splice(0,parca.length);kuyrukKaydet();toast(`${parca.length} bekleyen okuma kaydedilemedi: ${e.message}`);continue}
-        kuyruk.splice(0,parca.length);kuyrukKaydet();
+        kuyruk.splice(0,parca.length);kuyrukKaydet();ekKaydet(v,v.sonuclar);
         v.sonuclar.forEach(s=>{const g=geriAl.find(x=>x.istemci_id===s.istemci_id);if(!g)return;
           if(s.sonuc==='eklendi')g.sayim_id=v.sayim_id;else geriAl.splice(geriAl.indexOf(g),1)});
         durumCek();
@@ -398,16 +418,24 @@ function kuyrukGonder(){
   return gonderim;
 }
 /* Okumaları yazar. Art arda gelenler (canlı kamera, fotoğraf) 300 ms içinde tek
-   istekte toplanır: Google her istekte biraz bekletir. Sonuç: eklendi / tekrar
-   (başkası saymış) / kuyruk (bağlantı yok, telefonda bekliyor) / hata. */
-let toplanan=[],toplaZamani=null;
+   istekte toplanır: Google her istekte biraz bekletir. Bir istek yoldayken gelenler onun
+   dönüşünü bekleyip birlikte gider: sayım günü 10 telefon birden okurken Google'daki sıra
+   uzarsa istek sayısı artmaz, istek başına kutu artar (onay telefonda zaten hemen verilir).
+   Sonuç: eklendi / tekrar (başkası saymış) / kuyruk (bağlantı yok, telefonda bekliyor) / hata. */
+let toplanan=[],toplaZamani=null,yolda=false;
 function okumaEkle(liste){
-  return new Promise(res=>{toplanan.push({liste,res});if(!toplaZamani)toplaZamani=setTimeout(topluGonder,300)});
+  return new Promise(res=>{toplanan.push({liste,res});if(!toplaZamani&&!yolda)toplaZamani=setTimeout(topluGonder,300)});
 }
 async function topluGonder(){
-  toplaZamani=null;const grup=toplanan;toplanan=[];
-  const sonuc=await okumaGonder(grup.flatMap(g=>g.liste));
+  toplaZamani=null;
+  if(yolda||!toplanan.length)return;
+  const grup=toplanan,hepsi=grup.flatMap(g=>g.liste);toplanan=[];yolda=true;
+  let sonuc;
+  try{sonuc=await okumaGonder(hepsi)}
+  catch(e){toast('Kaydedilemedi: '+e.message);sonuc=hepsi.map(x=>({sonuc:'hata',gtin:x.p.gtin}))}
+  finally{yolda=false}
   let i=0;for(const g of grup){g.res(sonuc.slice(i,i+g.liste.length));i+=g.liste.length}
+  if(toplanan.length&&!toplaZamani)toplaZamani=setTimeout(topluGonder,0);
 }
 async function okumaGonder(liste){
   const kayitlar=liste.map(({p,kaynak})=>kayit(p,kaynak));
@@ -417,7 +445,7 @@ async function okumaGonder(liste){
     // Google bir istekte en çok 500 okuma alır (çok adetli karekodsuz giriş): parça parça.
     try{const sonuclar=[];let v=null;
       for(let i=0;i<kayitlar.length;i+=400){v=await apiPost('okuma',{sayim_id,okumalar:kayitlar.slice(i,i+400)});
-        v.sonuclar.forEach(s=>{if(s.sonuc==='eklendi')geriAl.push({istemci_id:s.istemci_id,sayim_id:v.sayim_id})});sonuclar.push(...v.sonuclar)}
+        v.sonuclar.forEach(s=>{if(s.sonuc==='eklendi')geriAl.push({istemci_id:s.istemci_id,sayim_id:v.sayim_id})});sonuclar.push(...v.sonuclar);ekKaydet(v,v.sonuclar)}
       if(geriAl.length>300)geriAl.splice(0,geriAl.length-300);
       if(v.rev!==durum.rev)durumCek();
       render();return sonuclar}
@@ -428,7 +456,7 @@ async function okumaGonder(liste){
     kuyruk.push({...k,sayim_id});geriAl.push({istemci_id:k.istemci_id,sayim_id});return {sonuc:'kuyruk',gtin:k.gtin,istemci_id:k.istemci_id}});
   kuyrukKaydet();render();return sonuc;
 }
-setInterval(()=>{if(!document.hidden)durumCek()},3000);
+setInterval(()=>{if(!document.hidden)durumCek()},5000);
 setInterval(()=>{if(!document.hidden)kuyrukGonder()},5000);
 
 /* ---------- ? ipuçları ---------- */
@@ -444,7 +472,7 @@ function kimlikCiz(){
   $('kimBtn').hidden=!ben.ad;$('kimBtn').textContent=ben.ad;
 }
 $('kimForm').addEventListener('submit',e=>{e.preventDefault();const v=$('adIn').value.trim().slice(0,40);if(!v){$('adIn').focus();return}
-  ben.ad=v;lsSet('personel',v);kimlikCiz();render()});
+  ben.ad=v;lsSet('personel',v);kimlikCiz();render();durum.rev='';durumCek()});
 
 /* ---------- kurulum: karekod, yapıştırma, başka telefonu bağlama ---------- */
 function kurulumKaydet(a){
@@ -523,7 +551,7 @@ function parseCode(raw){
 }
 function ean(gtin){return gtin.startsWith('0')?gtin.slice(1):gtin}
 function minExp(u){let m=null;for(const p of u.partiler){if(p.skt&&(!m||p.skt<m))m=p.skt}return m}
-function nameOf(g){const u=urunMap.get(g);return u?u.ad:''}
+function nameOf(g){const u=urunMap.get(g);return (u&&u.ad)||adTablo[g]||''}
 
 /* ---------- rendering ---------- */
 let openGtin=null;
@@ -542,7 +570,8 @@ function render(){
   const items=benimUrunlerim();
   let boxes=0,soon=0,exp=0;
   for(const it of items){boxes+=it.adet;const s=expStatus(minExp(it));if(s==='warn')soon++;if(s==='bad')exp++}
-  $('stKinds').textContent=items.length;$('stBoxes').textContent=boxes;$('kamToplam').textContent=boxes+kuyruk.length;$('stSoon').textContent=soon;$('stExp').textContent=exp;
+  const ek=ekBekleyen.reduce((t,e)=>t+e.n,0);
+  $('stKinds').textContent=items.length;$('stBoxes').textContent=boxes+ek;$('kamToplam').textContent=boxes+ek+kuyruk.length;$('stSoon').textContent=soon;$('stExp').textContent=exp;
   $('undoBtn').disabled=!geriAl.length;
   baglantiCiz();
   const nb=$('namesInfo').querySelector('.balon');
@@ -650,7 +679,7 @@ function sonucMetni(r,gtin){
    ürünün karekodu görüldüyse (aynı karede, son 5 sn'de ya da bu sayımda) barkod atlanır. */
 const sorKuyrugu=[];let sorulan=null,duraklat=false;
 const dmGoruldu=new Map();   // gtin -> karekodunun en son görüldüğü an
-function karekodluMu(g){const u=urunMap.get(g);return (dmGoruldu.get(g)||0)>Date.now()-5000||!!(u&&u.seri>0)}
+function karekodluMu(g){const u=urunMap.get(g);return (dmGoruldu.get(g)||0)>Date.now()-5000||!!(u&&u.seri>0)||kkSet.has(g)}
 const miadYaz=s=>s?s.slice(2,4)+'/'+s.slice(0,2):'';
 function miadOku(v){   // "05/28", "0528", "05/2028" -> {skt:'YYAA00'}; boş -> {skt:null}; geçersiz -> undefined
   const d=String(v||'').replace(/\D/g,'');if(!d)return {skt:null};
