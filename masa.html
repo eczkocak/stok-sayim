@@ -163,6 +163,8 @@ tr.ayrinti>td{background:var(--sunk);padding:10px 12px 12px}
         <button type="button" id="qrXlsxBtn">QR etiketli ürünler (Excel)</button>
         <button type="button" id="csvBtn">Ürün listesi (CSV)</button>
         <span style="flex:1 1 auto"></span>
+        <button type="button" id="adlarBtn">Ürün isimleri yükle</button><input id="adlarIn" type="file" accept=".csv,.txt,text/csv,text/plain" hidden>
+        <span class="ipucu sol" tabindex="0" id="adlarIpucu" data-ipucu="Tria'dan fiyat listesini (barkod ve ürün adı olan CSV; ayırıcı ; , ya da sekme) dışa aktarıp seçin. Yeni ürünler eklenir, adı değişenler güncellenir, eskiler silinmez. İsimler burada ve bütün telefonlarda görünür."></span>
         <button type="button" id="bagBtn">Telefon bağla</button>
         <button type="button" id="resetBtn" class="danger">Yeni sayım başlat</button>
       </div>
@@ -348,7 +350,9 @@ function kisiTablosu(){
   for(const t of m.values())t.urunler.sort((a,b)=>adOf(a.u).localeCompare(adOf(b.u),'tr'));
   return new Map([...m].sort((a,b)=>b[1].kutu-a[1].kutu||a[0].localeCompare(b[0],'tr')));
 }
-function ciz(){listeCiz();gecmisCiz()}
+function ciz(){listeCiz();gecmisCiz();adlarIpucuCiz()}
+function adlarIpucuCiz(){const e=$('adlarIpucu'),b=e.querySelector('.balon');if(!b)return;
+  const n=durum.urun_adi_sayisi;b.textContent=(n?`${n.toLocaleString('tr-TR')} ürün ismi yüklü. `:'')+e.dataset.ipucu}
 function listeCiz(){
   const V=gorunen(),s=V.sayim,kisiler=kisiTablosu();
   if(!kisiler.has(kisiSec))kisiSec='';
@@ -535,6 +539,28 @@ $('resetYes').onclick=async()=>{
   try{const v=await apiPost('yeni_sayim');$('resetConfirm').hidden=true;kisiSec='';
     toast(`Sayım #${v.kapanan} kapandı, #${v.sayim_id} başladı`);durumCek()}
   catch(e){toast(e.ag?'Bağlantı yok; yeni sayım başlatılamadı':e.message)}};
+
+/* ---------- ürün isimleri (Tria fiyat listesi CSV; telefon sayfasındakiyle aynı okuma) ---------- */
+function satirBol(l,ayr){const o=[];let c='',q=false;for(const ch of l){if(ch==='"'){q=!q;continue}if(ch===ayr&&!q){o.push(c);c=''}else c+=ch}o.push(c);return o.map(s=>s.trim())}
+$('adlarBtn').onclick=()=>$('adlarIn').click();
+$('adlarIn').addEventListener('change',async e=>{
+  const f=e.target.files[0];e.target.value='';if(!f)return;
+  const buf=await f.arrayBuffer();let txt;
+  try{txt=new TextDecoder('utf-8',{fatal:true}).decode(buf)}catch(err){txt=new TextDecoder('windows-1254').decode(buf)}
+  const satirlar=txt.split(/\r?\n/).filter(Boolean),ilk=satirlar[0]||'';
+  const ayr=[';','\t',','].sort((a,b)=>ilk.split(b).length-ilk.split(a).length)[0];
+  const adlar={};
+  for(const l of satirlar){const c=satirBol(l,ayr),bi=c.findIndex(x=>/^\d{8,14}$/.test(x));if(bi<0)continue;
+    const ad=c.find((x,i)=>i!==bi&&/[A-Za-zÇĞİÖŞÜçğıöşü]{2,}/.test(x));if(!ad)continue;
+    adlar[c[bi].padStart(14,'0')]=ad.slice(0,200)}
+  const ks=Object.keys(adlar);
+  if(!ks.length){toast('Dosyada barkod ve ürün adı sütunu bulunamadı');return}
+  const btn=$('adlarBtn');btn.disabled=true;btn.textContent='Yükleniyor…';
+  try{for(let i=0;i<ks.length;i+=5000){const p={};ks.slice(i,i+5000).forEach(k=>p[k]=adlar[k]);await apiPost('urun_adlari',{adlar:p})}
+    toast(`${ks.length.toLocaleString('tr-TR')} ürün ismi yüklendi`);durum.rev='';durumCek()}
+  catch(err){toast('İsimler yüklenemedi: '+err.message)}
+  finally{btn.disabled=false;btn.textContent='Ürün isimleri yükle'}
+});
 
 /* ---------- ? ipuçları ---------- */
 const SORU='<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M11 18h2v-2h-2v2zm1-16C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm0-14c-2.21 0-4 1.79-4 4h2c0-1.1.9-2 2-2s2 .9 2 2c0 2-3 1.75-3 5h2c0-2.25 3-2.5 3-5 0-2.21-1.79-4-4-4z"/></svg>';
